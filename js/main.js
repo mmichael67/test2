@@ -77,8 +77,8 @@ function animate() {
 
     updateWalkMovement();
 
-    // Set structure position to building center so rotation happens around the center
-    structure.position.set(buildingCenter.x+20.0, buildingCenter.y/2+20.0, buildingCenter.z);
+    // Set structure position to grid center so rotation happens around the grid center
+    structure.position.set(gridCenter.x, gridCenter.y, gridCenter.z);
     
     // For Z-up coordinate system:
     // rotation.z = rotation around vertical (Z) axis - controlled by horizontal mouse drag

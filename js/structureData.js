@@ -59,6 +59,13 @@ function generateGridCoordinates() {
 
 const gridCoords = generateGridCoordinates();
 
+// Calculate the center of the grid (rotation pivot point)
+const gridCenter = {
+    x: (gridCoords.x[0] + gridCoords.x[gridCoords.x.length - 1]) / 2,
+    y: (gridCoords.y[0] + gridCoords.y[gridCoords.y.length - 1]) / 2,
+    z: 0  // Ground level
+};
+
 // Generate structural data programmatically
 function generateStructuralData() {
     const data = {
