@@ -2,16 +2,6 @@
 // SUPPORT VISUALIZATION
 // ============================================
 
-// Define element colors - STANDARD for all models
-const ELEMENT_COLORS = {
-    COLUMN: 0x4CAF50,      // Green
-    BEAM: 0x2196F3,        // Blue
-    BRACE: 0xFF9800,       // Orange
-    WALL: 0xBDBDBD,        // Gray (transparent)
-    SLAB: 0x9E9E9E,        // Dark Gray (transparent)
-    SUPPORT: 0xFF0000      // Red
-};
-
 // Original support creation function - kept for future use
 function createSupport(supportData) {
     const position = new THREE.Vector3(...supportData.location);
@@ -142,7 +132,20 @@ function calculateSupportLocationsAtBase() {
 
 // NEW FUNCTION: Add supports at base using original support shapes
 function addSupportsAtBase() {
-    if (!structure) return;
+    console.log('addSupportsAtBase called');
+    console.log('structure:', structure);
+    console.log('buildingBounds:', buildingBounds);
+    console.log('geometryData:', geometryData ? 'exists' : 'null');
+    
+    if (!structure) {
+        console.error('No structure available');
+        return;
+    }
+    
+    if (!buildingBounds || !geometryData) {
+        console.error('Missing buildingBounds or geometryData');
+        return;
+    }
     
     const locations = calculateSupportLocationsAtBase();
     
