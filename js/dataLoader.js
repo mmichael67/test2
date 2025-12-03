@@ -110,6 +110,10 @@ function createStructureFromData() {
     
     structure = new THREE.Group();
     
+    // Set rotation order to ZXY to fix gimbal lock
+    // This ensures vertical drag (X rotation) works correctly after horizontal rotation (Z)
+    structure.rotation.order = 'ZXY';
+    
     // Center the building at origin
     const offsetX = -buildingCenter.x;
     const offsetY = -buildingCenter.y;
@@ -123,9 +127,33 @@ function createStructureFromData() {
         centeredVertices[i + 2] = geometryData[i + 2] + offsetZ;
     }
     
-    // Fix colors for overlapping surfaces
-    // Priority: Wall > Column > Beam > Slab
+    // STANDARD ELEMENT COLORS - same for all models
+    const ELEMENT_COLORS = {
+        COLUMN: 0x4CAF50,      // Green
+        BEAM: 0x2196F3,        // Blue
+        BRACE: 0xFF9800,       // Orange
+        WALL: 0xBDBDBD,        // Gray (transparent)
+        SLAB: 0x9E9E9E,        // Dark Gray (transparent)
+        SUPPORT: 0xFF0000      // Red
+    };
+    
+    // Convert hex colors to RGB (0-1 range)
+    function hexToRgb(hex) {
+        return {
+            r: ((hex >> 16) & 255) / 255,
+            g: ((hex >> 8) & 255) / 255,
+            b: (hex & 255) / 255
+        };
+    }
+    
+    const columnColor = hexToRgb(ELEMENT_COLORS.COLUMN);
+    const beamColor = hexToRgb(ELEMENT_COLORS.BEAM);
+    const wallColor = hexToRgb(ELEMENT_COLORS.WALL);
+    const slabColor = hexToRgb(ELEMENT_COLORS.SLAB);
+    
+    // Apply standard colors with priority: Wall > Column > Beam > Slab
     const fixedColors = new Float32Array(colorData.length);
+    const transparencyFlags = new Float32Array(colorData.length / 3); // One flag per vertex
     
     for (let i = 0; i < colorData.length; i += 9) { // Process each triangle
         // Get the colors of the 3 vertices
@@ -136,89 +164,150 @@ function createStructureFromData() {
         // Check if colors are not all the same (indicates overlapping elements)
         const sameColor = (r1 === r2 && r2 === r3 && g1 === g2 && g2 === g3 && b1 === b2 && b2 === b3);
         
-        if (!sameColor) {
-            // Collect all three colors
+        // Identify element type from original colors
+        // Red (0.996, 0, 0) = Column
+        // Blue (0, 0, 0.996) = Beam
+        // White (0.996, 0.996, 0.996) = Slab
+        // Yellow/Green/Other = Wall
+        
+        let selectedColor;
+        let isTransparent = false;
+        
+        if (sameColor) {
+            // Single element - identify type
+            if (r1 > 0.9 && g1 < 0.1 && b1 < 0.1) {
+                // Red = Column
+                selectedColor = columnColor;
+                isTransparent = false;
+            } else if (b1 > 0.9 && r1 < 0.1 && g1 < 0.1) {
+                // Blue = Beam
+                selectedColor = beamColor;
+                isTransparent = false;
+            } else if (r1 > 0.9 && g1 > 0.9 && b1 > 0.9) {
+                // White = Slab
+                selectedColor = slabColor;
+                isTransparent = true;
+            } else {
+                // Other = Wall
+                selectedColor = wallColor;
+                isTransparent = true;
+            }
+        } else {
+            // Overlapping elements - apply priority: Wall > Column > Beam > Slab
             const colors = [
                 { r: r1, g: g1, b: b1 },
                 { r: r2, g: g2, b: b2 },
                 { r: r3, g: g3, b: b3 }
             ];
             
-            // Identify element types by color patterns:
-            // Red (0.996, 0, 0) = Column
-            // Blue (0, 0, 0.996) = Beam
-            // White (0.996, 0.996, 0.996) = Slab
-            // Yellow/Green = Wall
-            
-            let selectedColor = colors[0]; // Default
-            
-            // Priority 1: Wall (has green or yellow component)
-            const wallColor = colors.find(c => 
-                (c.g > 0.5 && c.r > 0.5) || // Yellow
-                (c.g > 0.5 && c.b > 0.5) || // Cyan
-                (c.g > 0.5 && c.r < 0.5 && c.b < 0.5) // Green
+            // Priority 1: Wall (has green or yellow component, not pure red/blue)
+            const hasWall = colors.some(c => 
+                !((c.r > 0.9 && c.g < 0.1 && c.b < 0.1) || // Not column
+                  (c.b > 0.9 && c.r < 0.1 && c.g < 0.1) || // Not beam
+                  (c.r > 0.9 && c.g > 0.9 && c.b > 0.9))   // Not slab
             );
             
-            if (wallColor) {
+            if (hasWall) {
                 selectedColor = wallColor;
+                isTransparent = true;
             } else {
                 // Priority 2: Column (red)
-                const columnColor = colors.find(c => 
-                    c.r > 0.9 && c.g < 0.1 && c.b < 0.1
-                );
+                const hasColumn = colors.some(c => c.r > 0.9 && c.g < 0.1 && c.b < 0.1);
                 
-                if (columnColor) {
+                if (hasColumn) {
                     selectedColor = columnColor;
+                    isTransparent = false;
                 } else {
                     // Priority 3: Beam (blue)
-                    const beamColor = colors.find(c => 
-                        c.b > 0.9 && c.r < 0.1 && c.g < 0.1
-                    );
+                    const hasBeam = colors.some(c => c.b > 0.9 && c.r < 0.1 && c.g < 0.1);
                     
-                    if (beamColor) {
+                    if (hasBeam) {
                         selectedColor = beamColor;
+                        isTransparent = false;
                     } else {
-                        // Priority 4: Slab (white) - use any remaining color
-                        const slabColor = colors.find(c => 
-                            c.r > 0.9 && c.g > 0.9 && c.b > 0.9
-                        );
-                        if (slabColor) {
-                            selectedColor = slabColor;
-                        }
+                        // Priority 4: Slab (white)
+                        selectedColor = slabColor;
+                        isTransparent = true;
                     }
                 }
             }
+        }
+        
+        // Apply selected color to all vertices of this triangle
+        for (let j = 0; j < 9; j += 3) {
+            fixedColors[i + j] = selectedColor.r;
+            fixedColors[i + j + 1] = selectedColor.g;
+            fixedColors[i + j + 2] = selectedColor.b;
             
-            // Apply selected color to all vertices of this triangle
-            for (let j = 0; j < 9; j += 3) {
-                fixedColors[i + j] = selectedColor.r;
-                fixedColors[i + j + 1] = selectedColor.g;
-                fixedColors[i + j + 2] = selectedColor.b;
+            const vertexIndex = (i + j) / 3;
+            transparencyFlags[vertexIndex] = isTransparent ? 1 : 0;
+        }
+    }
+    
+    // Create TWO meshes: one for opaque elements (columns/beams), one for transparent (walls/slabs)
+    const opaqueVertices = [];
+    const opaqueColors = [];
+    const transparentVertices = [];
+    const transparentColors = [];
+    
+    for (let i = 0; i < centeredVertices.length; i += 9) {
+        const v1Index = i / 3;
+        const v2Index = (i + 3) / 3;
+        const v3Index = (i + 6) / 3;
+        
+        // Check if any vertex is transparent
+        const isTriangleTransparent = transparencyFlags[v1Index] === 1 || 
+                                      transparencyFlags[v2Index] === 1 || 
+                                      transparencyFlags[v3Index] === 1;
+        
+        if (isTriangleTransparent) {
+            // Add to transparent mesh
+            for (let j = 0; j < 9; j++) {
+                transparentVertices.push(centeredVertices[i + j]);
+                transparentColors.push(fixedColors[i + j]);
             }
         } else {
-            // Keep original colors when all same
+            // Add to opaque mesh
             for (let j = 0; j < 9; j++) {
-                fixedColors[i + j] = colorData[i + j];
+                opaqueVertices.push(centeredVertices[i + j]);
+                opaqueColors.push(fixedColors[i + j]);
             }
         }
     }
     
-    // Create main mesh geometry (mesh1 only - no wireframe)
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(centeredVertices, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(fixedColors, 3));
-    geometry.computeVertexNormals();
+    // Create opaque mesh (columns and beams)
+    if (opaqueVertices.length > 0) {
+        const opaqueGeometry = new THREE.BufferGeometry();
+        opaqueGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(opaqueVertices), 3));
+        opaqueGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(opaqueColors), 3));
+        opaqueGeometry.computeVertexNormals();
+        
+        const opaqueMaterial = new THREE.MeshLambertMaterial({ 
+            vertexColors: true,
+            side: THREE.DoubleSide
+        });
+        
+        const opaqueMesh = new THREE.Mesh(opaqueGeometry, opaqueMaterial);
+        structure.add(opaqueMesh);
+    }
     
-    // Create material with transparency for slabs and walls (like original)
-    const material = new THREE.MeshLambertMaterial({ 
-        vertexColors: true,
-        opacity: 0.6,  // More transparent like original
-        transparent: true,
-        side: THREE.DoubleSide
-    });
-    
-    const mesh = new THREE.Mesh(geometry, material);
-    structure.add(mesh);
+    // Create transparent mesh (walls and slabs)
+    if (transparentVertices.length > 0) {
+        const transparentGeometry = new THREE.BufferGeometry();
+        transparentGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(transparentVertices), 3));
+        transparentGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(transparentColors), 3));
+        transparentGeometry.computeVertexNormals();
+        
+        const transparentMaterial = new THREE.MeshLambertMaterial({ 
+            vertexColors: true,
+            opacity: 0.6,
+            transparent: true,
+            side: THREE.DoubleSide
+        });
+        
+        const transparentMesh = new THREE.Mesh(transparentGeometry, transparentMaterial);
+        structure.add(transparentMesh);
+    }
     
     scene.add(structure);
     
@@ -236,6 +325,8 @@ function createStructureFromData() {
     structure.add(gridHelper);
     
     console.log('Structure created with', geometryData.length / 9, 'triangles');
+    console.log('Opaque triangles:', opaqueVertices.length / 9);
+    console.log('Transparent triangles:', transparentVertices.length / 9);
 }
 
 function resetView() {

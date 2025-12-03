@@ -2,9 +2,14 @@
 // SUPPORT VISUALIZATION
 // ============================================
 
-// Define element colors
+// Define element colors - STANDARD for all models
 const ELEMENT_COLORS = {
-    SUPPORT: 0x00ff00  // Green for supports
+    COLUMN: 0x4CAF50,      // Green
+    BEAM: 0x2196F3,        // Blue
+    BRACE: 0xFF9800,       // Orange
+    WALL: 0xBDBDBD,        // Gray (transparent)
+    SLAB: 0x9E9E9E,        // Dark Gray (transparent)
+    SUPPORT: 0xFF0000      // Red
 };
 
 // Original support creation function - kept for future use
