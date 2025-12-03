@@ -29,17 +29,16 @@ async function init() {
     // Set Z as up axis (vertical)
     camera.up.set(0, 0, 1);
     
-    // Position camera to look at centered building (now at origin 0,0,0)
+    // Auto-position camera based on building size
     const cameraDistance = buildingMaxSize * 2;
     camera.position.set(
-        cameraDistance * 0.8,
-        cameraDistance * 0.5,
-        cameraDistance * 0.8
+        buildingCenter.x + cameraDistance * 0.8,
+        buildingCenter.y + cameraDistance * 0.5,
+        buildingCenter.z + cameraDistance * 0.8
     );
     
-    // Look at origin since building is now centered
-    cameraTarget = new THREE.Vector3(0, 0, 0);
-    cameraPan = new THREE.Vector3(0, 0, 0);
+    cameraTarget = new THREE.Vector3(buildingCenter.x, buildingCenter.y, buildingCenter.z);
+    cameraPan = new THREE.Vector3(buildingCenter.x, buildingCenter.y, buildingCenter.z);
     camera.lookAt(cameraTarget);
 
     const canvas = document.getElementById('canvas');
