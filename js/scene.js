@@ -5,7 +5,15 @@
 let scene, camera, renderer;
 let structure;
 
-function init() {
+async function init() {
+    // Load structure data first
+    await loadStructureData();
+    
+    if (!geometryData) {
+        console.error('Failed to load structure data');
+        return;
+    }
+    
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf8fafc);
 

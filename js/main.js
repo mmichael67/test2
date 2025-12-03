@@ -2,11 +2,6 @@
 // MAIN INITIALIZATION AND ANIMATION
 // ============================================
 
-// Calculate building properties automatically
-const buildingBounds = calculateBuildingBounds();
-const buildingCenter = buildingBounds.center;
-const buildingMaxSize = buildingBounds.maxSize;
-
 // Fullscreen Toggle Function
 function toggleFullscreen() {
     const body = document.body;
@@ -77,19 +72,22 @@ function animate() {
 
     updateWalkMovement();
 
-    // Set structure position to grid center so rotation happens around the grid center
-    structure.position.set(gridCenter.x, gridCenter.y, gridCenter.z);
-    
-    // For Z-up coordinate system:
-    // rotation.z = rotation around vertical (Z) axis - controlled by horizontal mouse drag
-    // rotation.x = tilt rotation - controlled by vertical mouse drag  
-    structure.rotation.z += (targetRotationY - structure.rotation.z) * 0.1;
-    structure.rotation.x += (targetRotationX - structure.rotation.x) * 0.1;
+    if (structure && buildingCenter) {
+        // Set structure position to building center so rotation happens around the center
+        structure.position.set(buildingCenter.x, buildingCenter.y, buildingCenter.z);
+        
+        // For Z-up coordinate system:
+        // rotation.z = rotation around vertical (Z) axis - controlled by horizontal mouse drag
+        // rotation.x = tilt rotation - controlled by vertical mouse drag  
+        structure.rotation.z += (targetRotationY - structure.rotation.z) * 0.1;
+        structure.rotation.x += (targetRotationX - structure.rotation.x) * 0.1;
+    }
 
-    cameraTarget.x = cameraPan.x;
-    cameraTarget.y = cameraPan.y;
-
-    camera.lookAt(cameraTarget);
+    if (cameraTarget && cameraPan) {
+        cameraTarget.x = cameraPan.x;
+        cameraTarget.y = cameraPan.y;
+        camera.lookAt(cameraTarget);
+    }
 
     renderer.render(scene, camera);
 }

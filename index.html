@@ -76,32 +76,24 @@
         <!-- About Section with Stats -->
         <div class="about-section">
             <h3>About This Project</h3>
-            <p>This structural optimization analysis demonstrates a comprehensive 3-story concrete building with optimized column sizing based on stress distribution and load capacity. The color-coded elements provide visual indicators of structural efficiency, allowing engineers to quickly identify areas of high stress and optimization opportunities. This advanced visualization combines structural analysis with real-time 3D rendering to facilitate better decision-making in construction planning.</p>
+            <p>This structural analysis visualization displays a detailed electrical room structural model exported from ETABS. The 3D rendering allows for comprehensive examination of the structural components with real-time interaction capabilities. Engineers can rotate, pan, and zoom to inspect every aspect of the design, facilitating better understanding of spatial relationships and structural integrity.</p>
             
             <div class="project-stats">
                 <div class="stat-card">
-                    <div class="stat-label">Material</div>
-                    <div class="stat-value">Concrete</div>
+                    <div class="stat-label">Source</div>
+                    <div class="stat-value">ETABS</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Area</div>
-                    <div class="stat-value">22,000 m²</div>
+                    <div class="stat-label">Model Type</div>
+                    <div class="stat-value">ER-mem</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Cost Reduction</div>
-                    <div class="stat-value">$250,000</div>
+                    <div class="stat-label">Coordinate System</div>
+                    <div class="stat-value">Z-Up</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Before Optimization</div>
-                    <div class="stat-value">1,350 tons</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">After Optimization</div>
-                    <div class="stat-value">1,100 tons</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Material Saved</div>
-                    <div class="stat-value">18.5%</div>
+                    <div class="stat-label">Render Mode</div>
+                    <div class="stat-value">Transparent</div>
                 </div>
             </div>
         </div>
@@ -156,8 +148,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <!-- Load in strict dependency order -->
-    <script src="js/structureData.js"></script>
-    <script src="js/support.js"></script>
+    <script src="js/dataLoader.js"></script>
     <script src="js/scene.js"></script>
     <script src="js/interactions.js"></script>
     <script src="js/main.js"></script>
