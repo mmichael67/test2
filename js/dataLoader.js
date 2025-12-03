@@ -20,6 +20,8 @@ let buildingMaxSize = null;
 let gridHelper = null;
 let initialCameraPosition = null;
 let initialCameraTarget = null;
+let slabMesh = null;  // Global reference for slab mesh
+let wallMesh = null;  // Global reference for wall mesh
 
 // Parse the model.html file to extract vertex and color data
 async function loadStructureData() {
@@ -138,6 +140,12 @@ function detectElementType(v1x, v1y, v1z, v2x, v2y, v2z, v3x, v3y, v3z) {
     // COLUMN: Vertical element (large Z extent, small XY footprint)
     // Check this first with priority
     if (sizeZ > 2.0 && sizeX < 1.0 && sizeY < 1.0) {
+        return 'COLUMN';
+    }
+    
+    // Also check for horizontal faces (top/bottom) of columns
+    // These have small XY size and small Z variation
+    if (maxZDiff < 0.15 && sizeX < 1.0 && sizeY < 1.0) {
         return 'COLUMN';
     }
     
@@ -263,8 +271,9 @@ function createStructureFromData() {
             side: THREE.DoubleSide
         });
         
-        const transparentMesh = new THREE.Mesh(transparentGeometry, transparentMaterial);
-        structure.add(transparentMesh);
+        slabMesh = new THREE.Mesh(transparentGeometry, transparentMaterial);
+        wallMesh = slabMesh; // Both reference the same mesh (combined)
+        structure.add(slabMesh);
         console.log('Added transparent mesh with', transparentIndices.length / 3, 'triangles');
     }
     

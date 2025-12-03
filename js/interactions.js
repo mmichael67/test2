@@ -36,9 +36,16 @@ function onMouseMove(e) {
         // Horizontal rotation around world Z axis
         targetRotationY += deltaX * 0.005;
         
-        // Vertical rotation around view-relative horizontal axis
-        // This needs to be applied correctly regardless of current Z rotation
-        targetRotationX -= deltaY * 0.005;
+        // Vertical rotation - adjust direction based on current Z rotation
+        // When rotated past 90 or 270 degrees, we need to flip the direction
+        const currentZRot = structure ? structure.rotation.z : 0;
+        const normalizedZ = ((currentZRot % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
+        
+        // Determine if we're in a flipped quadrant (90-270 degrees)
+        const isFlipped = normalizedZ > Math.PI / 2 && normalizedZ < Math.PI * 3 / 2;
+        const direction = isFlipped ? 1 : -1;
+        
+        targetRotationX += deltaY * 0.005 * direction;
         
         // Clamp vertical rotation to prevent flipping
         targetRotationX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, targetRotationX));
