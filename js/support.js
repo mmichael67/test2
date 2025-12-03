@@ -2,18 +2,110 @@
 // SUPPORT VISUALIZATION
 // ============================================
 
-// Find minimum Z level and add fixed supports there
-function addSupportsAtBase() {
-    if (!buildingBounds || !structure) return;
+// Define element colors
+const ELEMENT_COLORS = {
+    SUPPORT: 0x00ff00  // Green for supports
+};
+
+// Original support creation function - kept for future use
+function createSupport(supportData) {
+    const position = new THREE.Vector3(...supportData.location);
+    const group = new THREE.Group();
+
+    if (supportData.type === 'fixed') {
+        // Fixed support - represented by a pyramid/cone
+        const geometry = new THREE.ConeGeometry(0.3, 0.6, 4);
+        const material = new THREE.MeshPhongMaterial({
+            color: ELEMENT_COLORS.SUPPORT,
+            shininess: 30
+        });
+        const cone = new THREE.Mesh(geometry, material);
+        // cone.rotation.x = Math.PI;
+        //cone.position.y = -0.3;
+        //group.add(cone);
+
+        // Add base plate
+        const plateHeight = 0.1;
+        const plateGeom = new THREE.CylinderGeometry(0.4, 0.4, plateHeight, 16);
+        const plate = new THREE.Mesh(plateGeom, material);
+        // Put the plate so its TOP sits at y = 0 (before the group's X-rotation)
+        plate.position.y = -plateHeight / 2;   // was -0.65 with the cone present
+        group.add(plate);
+
+    } else if (supportData.type === 'pinned') {
+        // Pinned support - represented by a triangle
+        const shape = new THREE.Shape();
+        shape.moveTo(0, 0);
+        shape.lineTo(-0.3, -0.5);
+        shape.lineTo(0.3, -0.5);
+        shape.lineTo(0, 0);
+
+        const extrudeSettings = { depth: 0.1, bevelEnabled: false };
+        const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        const material = new THREE.MeshPhongMaterial({
+            color: ELEMENT_COLORS.SUPPORT,
+            shininess: 30
+        });
+        const triangle = new THREE.Mesh(geometry, material);
+        triangle.position.z = -0.05;
+        group.add(triangle);
+
+        // Add circle at top
+        const circleGeom = new THREE.SphereGeometry(0.15, 16, 16);
+        const circle = new THREE.Mesh(circleGeom, material);
+        circle.position.y = 0;
+        group.add(circle);
+
+    } else if (supportData.type === 'roller') {
+        // Roller support - triangle with rollers
+        const shape = new THREE.Shape();
+        shape.moveTo(0, 0);
+        shape.lineTo(-0.3, -0.5);
+        shape.lineTo(0.3, -0.5);
+        shape.lineTo(0, 0);
+
+        const extrudeSettings = { depth: 0.1, bevelEnabled: false };
+        const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        const material = new THREE.MeshPhongMaterial({
+            color: ELEMENT_COLORS.SUPPORT,
+            shininess: 30
+        });
+        const triangle = new THREE.Mesh(geometry, material);
+        triangle.position.z = -0.05;
+        group.add(triangle);
+
+        // Add rollers
+        const rollerGeom = new THREE.CylinderGeometry(0.1, 0.1, 0.15, 16);
+        const roller1 = new THREE.Mesh(rollerGeom, material);
+        roller1.position.set(-0.15, -0.6, 0);
+        roller1.rotation.z = Math.PI / 2;
+        group.add(roller1);
+
+        const roller2 = new THREE.Mesh(rollerGeom, material);
+        roller2.position.set(0.15, -0.6, 0);
+        roller2.rotation.z = Math.PI / 2;
+        group.add(roller2);
+    }
+    group.rotateX(Math.PI / 2);
+    group.position.copy(position);
+    structure.add(group);
+}
+
+// NEW FUNCTION: Find minimum Z level and calculate support locations
+function calculateSupportLocationsAtBase() {
+    if (!buildingBounds || !geometryData) {
+        console.log('Cannot calculate support locations - missing data');
+        return [];
+    }
     
     // Calculate minimum Z in centered coordinates
     const minZ = buildingBounds.min.z - buildingCenter.z;
     
-    console.log('Adding fixed supports at Z =', minZ);
+    console.log('Calculating support locations at Z =', minZ);
     
-    // Find all vertices at or near minimum level
+    // Find all unique XY positions at minimum level
     const tolerance = 0.1; // Small tolerance for floating point comparison
-    const supportPositions = [];
+    const supportLocations = [];
     
     // Check all vertices in geometry
     const positions = geometryData;
@@ -29,69 +121,34 @@ function addSupportsAtBase() {
         // If vertex is at minimum level
         if (Math.abs(z - minZ) < tolerance) {
             // Check if we already have a support at this XY location
-            const exists = supportPositions.some(pos => 
-                Math.abs(pos.x - x) < 0.5 && Math.abs(pos.y - y) < 0.5
+            const exists = supportLocations.some(loc => 
+                Math.abs(loc[0] - x) < 0.5 && Math.abs(loc[1] - y) < 0.5
             );
             
             if (!exists) {
-                supportPositions.push({ x, y, z: minZ });
+                supportLocations.push([x, y, minZ]);
             }
         }
     }
     
-    console.log(`Found ${supportPositions.length} support locations at base`);
-    
-    // Create fixed support symbols at each location
-    supportPositions.forEach(pos => {
-        createFixedSupport(pos.x, pos.y, pos.z);
-    });
+    console.log(`Found ${supportLocations.length} support locations at base`);
+    return supportLocations;
 }
 
-// Create a fixed support symbol (triangle with hatching)
-function createFixedSupport(x, y, z) {
-    const supportGroup = new THREE.Group();
+// NEW FUNCTION: Add supports at base using original support shapes
+function addSupportsAtBase() {
+    if (!structure) return;
     
-    // Create triangle base
-    const size = buildingMaxSize * 0.02; // Scale with building
-    const triangleGeometry = new THREE.BufferGeometry();
+    const locations = calculateSupportLocationsAtBase();
     
-    const vertices = new Float32Array([
-        0, 0, 0,
-        -size, -size * 0.5, 0,
-        size, -size * 0.5, 0
-    ]);
-    
-    triangleGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-    
-    const triangleMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0x00ff00, 
-        side: THREE.DoubleSide 
+    // Create fixed supports at each location using the original createSupport function
+    locations.forEach(location => {
+        const supportData = {
+            type: 'fixed',  // Default to fixed support
+            location: location
+        };
+        createSupport(supportData);
     });
     
-    const triangle = new THREE.Mesh(triangleGeometry, triangleMaterial);
-    supportGroup.add(triangle);
-    
-    // Add hatching lines below triangle
-    const lineGeometry = new THREE.BufferGeometry();
-    const lineVertices = [];
-    
-    for (let i = 0; i < 5; i++) {
-        const offset = -size * 0.5 - (i * size * 0.15);
-        lineVertices.push(-size, offset, 0);
-        lineVertices.push(size, offset, 0);
-    }
-    
-    lineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(lineVertices), 3));
-    
-    const lineMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00 });
-    const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
-    supportGroup.add(lines);
-    
-    // Position the support
-    supportGroup.position.set(x, y, z);
-    
-    // Rotate to align with XY plane (Z-up)
-    supportGroup.rotation.x = Math.PI / 2;
-    
-    structure.add(supportGroup);
+    console.log(`Added ${locations.length} fixed supports at base`);
 }

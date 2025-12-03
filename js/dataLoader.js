@@ -123,9 +123,10 @@ function createStructureFromData() {
         centeredVertices[i + 2] = geometryData[i + 2] + offsetZ;
     }
     
-    // Fix colors for slabs and walls - prevent periodic color changes
-    // For surfaces with two objects, prioritize slab/wall element color
+    // Fix colors for overlapping surfaces
+    // Priority: Wall > Column > Beam > Slab
     const fixedColors = new Float32Array(colorData.length);
+    
     for (let i = 0; i < colorData.length; i += 9) { // Process each triangle
         // Get the colors of the 3 vertices
         const r1 = colorData[i], g1 = colorData[i + 1], b1 = colorData[i + 2];
@@ -136,37 +137,63 @@ function createStructureFromData() {
         const sameColor = (r1 === r2 && r2 === r3 && g1 === g2 && g2 === g3 && b1 === b2 && b2 === b3);
         
         if (!sameColor) {
-            // Get vertices to determine if this is a slab (horizontal) or wall (vertical)
-            const v1x = centeredVertices[i], v1y = centeredVertices[i + 1], v1z = centeredVertices[i + 2];
-            const v2x = centeredVertices[i + 3], v2y = centeredVertices[i + 4], v2z = centeredVertices[i + 5];
-            const v3x = centeredVertices[i + 6], v3y = centeredVertices[i + 7], v3z = centeredVertices[i + 8];
+            // Collect all three colors
+            const colors = [
+                { r: r1, g: g1, b: b1 },
+                { r: r2, g: g2, b: b2 },
+                { r: r3, g: g3, b: b3 }
+            ];
             
-            const avgZ = (v1z + v2z + v3z) / 3;
-            const maxZDiff = Math.max(Math.abs(v1z - avgZ), Math.abs(v2z - avgZ), Math.abs(v3z - avgZ));
+            // Identify element types by color patterns:
+            // Red (0.996, 0, 0) = Column
+            // Blue (0, 0, 0.996) = Beam
+            // White (0.996, 0.996, 0.996) = Slab
+            // Yellow/Green = Wall
             
-            // If nearly horizontal (small Z variation), it's a slab - prioritize non-column color
-            if (maxZDiff < 0.1) {
-                // Find the non-red color (slabs are typically blue or white, not red like columns)
-                let targetR = r1, targetG = g1, targetB = b1;
-                if (r1 > 0.9 && g1 < 0.1 && b1 < 0.1) { // If first is red (column)
-                    if (r2 < 0.9 || g2 > 0.1 || b2 > 0.1) {
-                        targetR = r2; targetG = g2; targetB = b2;
+            let selectedColor = colors[0]; // Default
+            
+            // Priority 1: Wall (has green or yellow component)
+            const wallColor = colors.find(c => 
+                (c.g > 0.5 && c.r > 0.5) || // Yellow
+                (c.g > 0.5 && c.b > 0.5) || // Cyan
+                (c.g > 0.5 && c.r < 0.5 && c.b < 0.5) // Green
+            );
+            
+            if (wallColor) {
+                selectedColor = wallColor;
+            } else {
+                // Priority 2: Column (red)
+                const columnColor = colors.find(c => 
+                    c.r > 0.9 && c.g < 0.1 && c.b < 0.1
+                );
+                
+                if (columnColor) {
+                    selectedColor = columnColor;
+                } else {
+                    // Priority 3: Beam (blue)
+                    const beamColor = colors.find(c => 
+                        c.b > 0.9 && c.r < 0.1 && c.g < 0.1
+                    );
+                    
+                    if (beamColor) {
+                        selectedColor = beamColor;
                     } else {
-                        targetR = r3; targetG = g3; targetB = b3;
+                        // Priority 4: Slab (white) - use any remaining color
+                        const slabColor = colors.find(c => 
+                            c.r > 0.9 && c.g > 0.9 && c.b > 0.9
+                        );
+                        if (slabColor) {
+                            selectedColor = slabColor;
+                        }
                     }
                 }
-                
-                // Apply same color to all vertices
-                for (let j = 0; j < 9; j += 3) {
-                    fixedColors[i + j] = targetR;
-                    fixedColors[i + j + 1] = targetG;
-                    fixedColors[i + j + 2] = targetB;
-                }
-            } else {
-                // Keep original colors for non-slabs
-                for (let j = 0; j < 9; j++) {
-                    fixedColors[i + j] = colorData[i + j];
-                }
+            }
+            
+            // Apply selected color to all vertices of this triangle
+            for (let j = 0; j < 9; j += 3) {
+                fixedColors[i + j] = selectedColor.r;
+                fixedColors[i + j + 1] = selectedColor.g;
+                fixedColors[i + j + 2] = selectedColor.b;
             }
         } else {
             // Keep original colors when all same
