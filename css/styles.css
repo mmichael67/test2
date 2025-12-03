@@ -202,36 +202,6 @@ canvas {
     color: white;
 }
 
-.reset-view-btn {
-    background: #3b82f6;
-    color: white;
-    border: none;
-    padding: 10px 16px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.3s;
-    width: 100%;
-    margin-top: 4px;
-}
-
-.reset-view-btn:hover {
-    background: #2563eb;
-}
-
-.reset-view-btn:active {
-    transform: scale(0.98);
-}
-
-#container.dark-canvas .reset-view-btn {
-    background: #60a5fa;
-}
-
-#container.dark-canvas .reset-view-btn:hover {
-    background: #3b82f6;
-}
-
 /* Layers Panel - Inside Canvas */
 .layers-panel {
     display: none;

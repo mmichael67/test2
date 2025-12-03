@@ -7,8 +7,15 @@ let buildingBounds = null;
 let buildingCenter = null;
 let buildingMaxSize = null;
 let gridHelper = null;
-let initialCameraPosition = null;
-let initialCameraTarget = null;
+
+// Element type colors - using original style colors
+const ELEMENT_COLORS = {
+    COLUMN: 0xff4444,      // Red
+    BEAM: 0x4444ff,        // Blue
+    SLAB: 0x2222ff,        // Blue with transparency (original style)
+    WALL: 0x2222ff,        // Blue with transparency (original style)
+    OTHER: 0x888888        // Gray
+};
 
 // Parse the ER-mem.html file to extract vertex data
 async function loadStructureData() {
@@ -86,31 +93,50 @@ function calculateBounds() {
     console.log('Building bounds:', buildingBounds);
 }
 
-function getColorForTriangle(v1, v2, v3) {
-    // Get bounding box of triangle
-    const minX = Math.min(v1.x, v2.x, v3.x);
-    const maxX = Math.max(v1.x, v2.x, v3.x);
-    const minY = Math.min(v1.y, v2.y, v3.y);
-    const maxY = Math.max(v1.y, v2.y, v3.y);
-    const minZ = Math.min(v1.z, v2.z, v3.z);
-    const maxZ = Math.max(v1.z, v2.z, v3.z);
+function detectElementType(vertices) {
+    // Calculate dimensions of the element
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    
+    for (let i = 0; i < vertices.length; i += 3) {
+        minX = Math.min(minX, vertices[i]);
+        minY = Math.min(minY, vertices[i + 1]);
+        minZ = Math.min(minZ, vertices[i + 2]);
+        maxX = Math.max(maxX, vertices[i]);
+        maxY = Math.max(maxY, vertices[i + 1]);
+        maxZ = Math.max(maxZ, vertices[i + 2]);
+    }
     
     const dx = maxX - minX;
     const dy = maxY - minY;
     const dz = maxZ - minZ;
     
-    // Column: vertical element (Z dimension much larger)
-    if (dz > 2.0 && dz > dx * 2 && dz > dy * 2) {
-        return new THREE.Color(0xff4444); // Red
+    // Column: vertical element (one dimension much larger in Z direction)
+    if (dz > dx * 2 && dz > dy * 2 && dz > 2.0) {
+        return { type: 'COLUMN', opacity: 0.85 };
     }
     
-    // Beam: horizontal elongated element
-    if (dz > 0.3 && dz < 1.0 && (dx > 1.5 || dy > 1.5)) {
-        return new THREE.Color(0x4444ff); // Blue
+    // Slab: horizontal thin element (small Z dimension, large X and Y)
+    if (dz < 0.5 && (dx > 2.0 || dy > 2.0)) {
+        return { type: 'SLAB', opacity: 0.6 };
     }
     
-    // Default: use original blue color for slabs, walls, etc.
-    return new THREE.Color(0x2222ff); // Original blue
+    // Beam: horizontal elongated element (one horizontal dimension much larger)
+    if (dz < dx && dz < dy && dz > 0.3 && (dx > dy * 2 || dy > dx * 2) && (dx > 2.0 || dy > 2.0)) {
+        return { type: 'BEAM', opacity: 0.85 };
+    }
+    
+    // Wall: vertical thin element
+    if ((dx < 0.5 || dy < 0.5) && dz > 1.0) {
+        return { type: 'WALL', opacity: 0.6 };
+    }
+    
+    // Filter out very small elements (likely extras)
+    if (dx < 1.0 && dy < 1.0 && dz < 1.0) {
+        return null;
+    }
+    
+    return null; // Don't show other elements
 }
 
 function createStructureFromData() {
@@ -126,75 +152,63 @@ function createStructureFromData() {
     const offsetY = -buildingCenter.y;
     const offsetZ = -buildingCenter.z;
     
-    // Create centered vertex array and color array
-    const centeredVertices = new Float32Array(geometryData.length);
-    const colors = new Float32Array(geometryData.length); // RGB for each vertex
+    // Process triangles and group by element type
+    const triangleCount = geometryData.length / 9;
+    console.log(`Processing ${triangleCount} triangles`);
     
-    // Process each triangle and assign colors
+    // Group triangles by element type
+    const elementGroups = {};
+    
     for (let i = 0; i < geometryData.length; i += 9) {
-        // Get triangle vertices
-        const v1 = {
-            x: geometryData[i],
-            y: geometryData[i + 1],
-            z: geometryData[i + 2]
-        };
-        const v2 = {
-            x: geometryData[i + 3],
-            y: geometryData[i + 4],
-            z: geometryData[i + 5]
-        };
-        const v3 = {
-            x: geometryData[i + 6],
-            y: geometryData[i + 7],
-            z: geometryData[i + 8]
-        };
+        // Get triangle vertices (3 vertices x 3 coordinates = 9 values)
+        const triangleVerts = new Float32Array(9);
+        for (let j = 0; j < 9; j++) {
+            triangleVerts[j] = geometryData[i + j];
+        }
         
-        // Determine color for this triangle
-        const color = getColorForTriangle(v1, v2, v3);
+        // Detect element type
+        const elementInfo = detectElementType(triangleVerts);
         
-        // Apply centered positions
-        centeredVertices[i] = v1.x + offsetX;
-        centeredVertices[i + 1] = v1.y + offsetY;
-        centeredVertices[i + 2] = v1.z + offsetZ;
+        if (!elementInfo) continue; // Skip null elements
         
-        centeredVertices[i + 3] = v2.x + offsetX;
-        centeredVertices[i + 4] = v2.y + offsetY;
-        centeredVertices[i + 5] = v2.z + offsetZ;
+        const key = `${elementInfo.type}_${elementInfo.opacity}`;
         
-        centeredVertices[i + 6] = v3.x + offsetX;
-        centeredVertices[i + 7] = v3.y + offsetY;
-        centeredVertices[i + 8] = v3.z + offsetZ;
+        if (!elementGroups[key]) {
+            elementGroups[key] = {
+                type: elementInfo.type,
+                opacity: elementInfo.opacity,
+                vertices: []
+            };
+        }
         
-        // Set same color for all 3 vertices of the triangle
-        colors[i] = color.r;
-        colors[i + 1] = color.g;
-        colors[i + 2] = color.b;
-        
-        colors[i + 3] = color.r;
-        colors[i + 4] = color.g;
-        colors[i + 5] = color.b;
-        
-        colors[i + 6] = color.r;
-        colors[i + 7] = color.g;
-        colors[i + 8] = color.b;
+        // Add centered vertices
+        for (let j = 0; j < 9; j += 3) {
+            elementGroups[key].vertices.push(
+                triangleVerts[j] + offsetX,
+                triangleVerts[j + 1] + offsetY,
+                triangleVerts[j + 2] + offsetZ
+            );
+        }
     }
     
-    // Create single geometry like the original
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(centeredVertices, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geometry.computeVertexNormals();
-    
-    // Create material with vertex colors (like original but with our colors)
-    const material = new THREE.MeshLambertMaterial({ 
-        vertexColors: true,
-        opacity: 0.6,
-        transparent: true,
-        side: THREE.DoubleSide
-    });
-    
-    const mesh = new THREE.Mesh(geometry, material);
-    structure.add(mesh);
+    // Create meshes for each element type
+    for (const [key, group] of Object.entries(elementGroups)) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(group.vertices), 3));
+        geometry.computeVertexNormals();
+        
+        const color = ELEMENT_COLORS[group.type];
+        
+        const material = new THREE.MeshLambertMaterial({ 
+            color: color,
+            opacity: group.opacity,
+            transparent: true,
+            side: THREE.DoubleSide
+        });
+        
+        const mesh = new THREE.Mesh(geometry, material);
+        structure.add(mesh);
+    }
     
     scene.add(structure);
     
@@ -211,22 +225,8 @@ function createStructureFromData() {
     // Add grid to structure group so it rotates with the building
     structure.add(gridHelper);
     
-    console.log('Structure created with', geometryData.length / 9, 'triangles');
-}
-
-function resetView() {
-    if (!initialCameraPosition || !initialCameraTarget) return;
-    
-    // Reset camera position
-    camera.position.copy(initialCameraPosition);
-    cameraTarget.copy(initialCameraTarget);
-    cameraPan.copy(initialCameraTarget);
-    camera.lookAt(cameraTarget);
-    
-    // Reset structure rotation
-    if (structure) {
-        structure.rotation.set(0, 0, 0);
-        targetRotationX = 0;
-        targetRotationY = 0;
-    }
+    console.log('Structure created with color coding');
+    console.log('Element groups:', Object.values(elementGroups).map(g => 
+        `${g.type}: ${g.vertices.length / 9} triangles`
+    ));
 }

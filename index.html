@@ -34,10 +34,10 @@
         <!-- Canvas with Layers Inside -->
         <div class="canvas-wrapper">
             <div id="container">
-                <!-- Canvas Controls -->
+                <!-- Canvas Background Toggle -->
                 <div class="canvas-bg-toggle">
                     <div class="toggle-row">
-                        <span class="canvas-bg-label">Dark Mode</span>
+                        <span class="canvas-bg-label">Canvas BG</span>
                         <label class="toggle-switch">
                             <input type="checkbox" id="canvasBgToggle" onchange="toggleCanvasBackground()">
                             <span class="slider"></span>
@@ -50,7 +50,6 @@
                             <span class="slider"></span>
                         </label>
                     </div>
-                    <button class="reset-view-btn" onclick="resetView()">Reset View</button>
                 </div>
 
                 <canvas id="canvas"></canvas>
@@ -150,7 +149,6 @@
 
     <!-- Load in strict dependency order -->
     <script src="js/dataLoader.js"></script>
-    <script src="js/support.js"></script>
     <script src="js/scene.js"></script>
     <script src="js/interactions.js"></script>
     <script src="js/main.js"></script>

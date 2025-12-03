@@ -41,10 +41,6 @@ async function init() {
     cameraTarget = new THREE.Vector3(0, 0, 0);
     cameraPan = new THREE.Vector3(0, 0, 0);
     camera.lookAt(cameraTarget);
-    
-    // Save initial camera position for reset
-    initialCameraPosition = camera.position.clone();
-    initialCameraTarget = cameraTarget.clone();
 
     const canvas = document.getElementById('canvas');
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
