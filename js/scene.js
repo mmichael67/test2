@@ -63,6 +63,9 @@ async function init() {
     scene.add(directionalLight2);
 
     createStructureFromData();
+    
+    // Add fixed supports at minimum level
+    addSupportsAtBase();
 
     // Canvas focus management
     canvas.addEventListener('mouseenter', () => {

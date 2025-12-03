@@ -29,9 +29,19 @@ function onMouseMove(e) {
         const deltaX = e.clientX - mouseX;
         const deltaY = e.clientY - mouseY;
         
-        // For Z-up: horizontal drag rotates around Z axis, vertical drag rotates around horizontal
-        targetRotationY += deltaX * 0.005;  // This will rotate around Z (vertical axis)
-        targetRotationX -= deltaY * 0.005;  // This will tilt around horizontal axis
+        // For Z-up coordinate system:
+        // - Horizontal drag (deltaX) -> rotation around Z axis (vertical axis)
+        // - Vertical drag (deltaY) -> tilt around horizontal axis
+        
+        // Horizontal rotation (around vertical Z axis) - always consistent
+        targetRotationY += deltaX * 0.005;
+        
+        // Vertical rotation (tilt) - drag up = tilt up, drag down = tilt down
+        // Using subtraction makes dragging UP (negative deltaY) increase rotation (tilt up)
+        targetRotationX -= deltaY * 0.005;
+        
+        // Clamp vertical rotation to prevent over-rotation
+        targetRotationX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, targetRotationX));
         
         mouseX = e.clientX;
         mouseY = e.clientY;
