@@ -29,25 +29,11 @@ function onMouseMove(e) {
         const deltaX = e.clientX - mouseX;
         const deltaY = e.clientY - mouseY;
         
-        // For Z-up coordinate system with proper rotation:
-        // - Horizontal drag rotates around the world Z axis (always vertical)
-        // - Vertical drag rotates around the current horizontal axis (view-relative)
+        // Store delta rotations for quaternion application in animate loop
+        targetRotationY += deltaX * 0.005;  // Rotation around world Z (vertical)
+        targetRotationX -= deltaY * 0.005;  // Tilt
         
-        // Horizontal rotation around world Z axis
-        targetRotationY += deltaX * 0.005;
-        
-        // Vertical rotation - adjust direction based on current Z rotation
-        // When rotated past 90 or 270 degrees, we need to flip the direction
-        const currentZRot = structure ? structure.rotation.z : 0;
-        const normalizedZ = ((currentZRot % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
-        
-        // Determine if we're in a flipped quadrant (90-270 degrees)
-        const isFlipped = normalizedZ > Math.PI / 2 && normalizedZ < Math.PI * 3 / 2;
-        const direction = isFlipped ? 1 : -1;
-        
-        targetRotationX += deltaY * 0.005 * direction;
-        
-        // Clamp vertical rotation to prevent flipping
+        // Clamp vertical rotation to prevent over-rotation
         targetRotationX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, targetRotationX));
         
         mouseX = e.clientX;

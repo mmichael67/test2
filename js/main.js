@@ -84,14 +84,16 @@ function animate() {
     updateWalkMovement();
 
     if (structure) {
-        // FIXED ROTATION with proper order (ZXY)
-        // This ensures X rotation (tilt) always happens around a horizontal axis
-        // even after Z rotation (spin)
-        structure.rotation.order = 'ZXY';  // Apply Z first, then X, then Y
+        // Use quaternion-based rotation to avoid gimbal lock
+        // This ensures rotations work consistently in all directions
         
-        // Smooth interpolation for rotations
-        structure.rotation.z += (targetRotationY - structure.rotation.z) * 0.1;
-        structure.rotation.x += (targetRotationX - structure.rotation.x) * 0.1;
+        // Create target quaternion from euler angles
+        const targetQuaternion = new THREE.Quaternion();
+        const targetEuler = new THREE.Euler(targetRotationX, 0, targetRotationY, 'XYZ');
+        targetQuaternion.setFromEuler(targetEuler);
+        
+        // Smoothly interpolate (slerp) from current to target quaternion
+        structure.quaternion.slerp(targetQuaternion, 0.1);
     }
 
     if (cameraTarget && cameraPan) {

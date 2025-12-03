@@ -302,7 +302,7 @@ function resetView() {
     camera.lookAt(cameraTarget);
     
     if (structure) {
-        structure.rotation.set(0, 0, 0);
+        structure.quaternion.set(0, 0, 0, 1); // Reset quaternion to identity
         targetRotationX = 0;
         targetRotationY = 0;
     }
