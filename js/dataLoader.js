@@ -4,8 +4,6 @@
 
 let geometryData = null;
 let colorData = null;
-let wireframeData = null;
-let wireframeColorData = null;
 let buildingBounds = null;
 let buildingCenter = null;
 let buildingMaxSize = null;
@@ -31,29 +29,6 @@ async function loadStructureData() {
         if (!colorMatch) {
             console.error('Could not find color data in ER-mem.html');
             return null;
-        }
-        
-        // Extract wireframe data (vertices3 for ll mesh)
-        const wireframeMatch = htmlText.match(/var vertices3 = new Float32Array\(\[([\s\S]*?)\]\);/);
-        if (wireframeMatch) {
-            const wireframeString = wireframeMatch[1];
-            const wireframeVerts = wireframeString
-                .split(',')
-                .map(s => parseFloat(s.trim()))
-                .filter(n => !isNaN(n));
-            wireframeData = new Float32Array(wireframeVerts);
-            console.log(`Loaded ${wireframeData.length} wireframe vertex values`);
-        }
-        
-        // Extract wireframe color data (clr3)
-        const wireframeColorMatch = htmlText.match(/var clr3 = new Float32Array\(\[([\s\S]*?)\]\);/);
-        if (wireframeColorMatch) {
-            const wireframeColorString = wireframeColorMatch[1];
-            const wireframeColors = wireframeColorString
-                .split(',')
-                .map(s => parseFloat(s.trim()))
-                .filter(n => !isNaN(n));
-            wireframeColorData = new Float32Array(wireframeColors);
         }
         
         // Parse the vertex array
@@ -148,7 +123,7 @@ function createStructureFromData() {
         centeredVertices[i + 2] = geometryData[i + 2] + offsetZ;
     }
     
-    // Create main mesh geometry (mesh1)
+    // Create main mesh geometry (mesh1 only - no wireframe)
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(centeredVertices, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colorData, 3));
@@ -164,37 +139,6 @@ function createStructureFromData() {
     
     const mesh = new THREE.Mesh(geometry, material);
     structure.add(mesh);
-    
-    // Add wireframe mesh (ll) if wireframe data exists
-    if (wireframeData && wireframeData.length > 0) {
-        const centeredWireframeVertices = new Float32Array(wireframeData.length);
-        for (let i = 0; i < wireframeData.length; i += 3) {
-            centeredWireframeVertices[i] = wireframeData[i] + offsetX;
-            centeredWireframeVertices[i + 1] = wireframeData[i + 1] + offsetY;
-            centeredWireframeVertices[i + 2] = wireframeData[i + 2] + offsetZ;
-        }
-        
-        const wireframeGeometry = new THREE.BufferGeometry();
-        wireframeGeometry.setAttribute('position', new THREE.BufferAttribute(centeredWireframeVertices, 3));
-        
-        if (wireframeColorData) {
-            wireframeGeometry.setAttribute('color', new THREE.BufferAttribute(wireframeColorData, 3));
-        }
-        
-        wireframeGeometry.computeVertexNormals();
-        
-        // Create wireframe material like mat3 in ER-mem.html
-        const wireframeMaterial = new THREE.MeshLambertMaterial({
-            color: 0xffffff,
-            vertexColors: wireframeColorData ? true : false,
-            wireframe: true
-        });
-        
-        const wireframeMesh = new THREE.Mesh(wireframeGeometry, wireframeMaterial);
-        structure.add(wireframeMesh);
-        
-        console.log('Added wireframe with', wireframeData.length / 3, 'vertices');
-    }
     
     scene.add(structure);
     
