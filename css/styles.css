@@ -202,59 +202,6 @@ canvas {
     color: white;
 }
 
-/* Color Legend */
-.color-legend {
-    position: absolute;
-    top: 20px;
-    left: 20px;
-    z-index: 10;
-    background: rgba(255, 255, 255, 0.95);
-    border: 2px solid #3b82f6;
-    border-radius: 12px;
-    padding: 15px 20px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-}
-
-#container.dark-canvas .color-legend {
-    background: rgba(30, 30, 30, 0.95);
-    border-color: #60a5fa;
-}
-
-.color-legend h4 {
-    margin: 0 0 12px 0;
-    color: #1e3a8a;
-    font-size: 14px;
-    font-weight: bold;
-}
-
-#container.dark-canvas .color-legend h4 {
-    color: #93c5fd;
-}
-
-.legend-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 8px 0;
-}
-
-.legend-color {
-    width: 24px;
-    height: 16px;
-    border-radius: 4px;
-    border: 1px solid rgba(0, 0, 0, 0.2);
-}
-
-.legend-label {
-    color: #1e293b;
-    font-size: 12px;
-    font-weight: 500;
-}
-
-#container.dark-canvas .legend-label {
-    color: #e0e7ff;
-}
-
 /* Layers Panel - Inside Canvas */
 .layers-panel {
     display: none;

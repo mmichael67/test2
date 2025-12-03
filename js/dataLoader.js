@@ -6,13 +6,14 @@ let geometryData = null;
 let buildingBounds = null;
 let buildingCenter = null;
 let buildingMaxSize = null;
+let gridHelper = null;
 
-// Element type colors
+// Element type colors - using original style colors
 const ELEMENT_COLORS = {
     COLUMN: 0xff4444,      // Red
     BEAM: 0x4444ff,        // Blue
-    SLAB: 0x44ff44,        // Green
-    WALL: 0xffaa44,        // Orange
+    SLAB: 0x2222ff,        // Blue with transparency (original style)
+    WALL: 0x2222ff,        // Blue with transparency (original style)
     OTHER: 0x888888        // Gray
 };
 
@@ -110,31 +111,32 @@ function detectElementType(vertices) {
     const dy = maxY - minY;
     const dz = maxZ - minZ;
     
-    // Sort dimensions to get smallest, medium, largest
-    const dims = [dx, dy, dz].sort((a, b) => a - b);
-    const [smallest, medium, largest] = dims;
-    
     // Column: vertical element (one dimension much larger in Z direction)
-    if (dz > dx * 2 && dz > dy * 2 && dz > 1.0) {
-        return ELEMENT_COLORS.COLUMN;
+    if (dz > dx * 2 && dz > dy * 2 && dz > 2.0) {
+        return { type: 'COLUMN', opacity: 0.85 };
     }
     
     // Slab: horizontal thin element (small Z dimension, large X and Y)
-    if (dz < 0.5 && (dx > 1.0 || dy > 1.0)) {
-        return ELEMENT_COLORS.SLAB;
+    if (dz < 0.5 && (dx > 2.0 || dy > 2.0)) {
+        return { type: 'SLAB', opacity: 0.6 };
     }
     
     // Beam: horizontal elongated element (one horizontal dimension much larger)
-    if (dz < dx && dz < dy && (dx > dy * 2 || dy > dx * 2)) {
-        return ELEMENT_COLORS.BEAM;
+    if (dz < dx && dz < dy && dz > 0.3 && (dx > dy * 2 || dy > dx * 2) && (dx > 2.0 || dy > 2.0)) {
+        return { type: 'BEAM', opacity: 0.85 };
     }
     
     // Wall: vertical thin element
-    if (smallest < 0.5 && largest > 1.0) {
-        return ELEMENT_COLORS.WALL;
+    if ((dx < 0.5 || dy < 0.5) && dz > 1.0) {
+        return { type: 'WALL', opacity: 0.6 };
     }
     
-    return ELEMENT_COLORS.OTHER;
+    // Filter out very small elements (likely extras)
+    if (dx < 1.0 && dy < 1.0 && dz < 1.0) {
+        return null;
+    }
+    
+    return null; // Don't show other elements
 }
 
 function createStructureFromData() {
@@ -154,7 +156,7 @@ function createStructureFromData() {
     const triangleCount = geometryData.length / 9;
     console.log(`Processing ${triangleCount} triangles`);
     
-    // Group triangles by color
+    // Group triangles by element type
     const elementGroups = {};
     
     for (let i = 0; i < geometryData.length; i += 9) {
@@ -165,15 +167,23 @@ function createStructureFromData() {
         }
         
         // Detect element type
-        const color = detectElementType(triangleVerts);
+        const elementInfo = detectElementType(triangleVerts);
         
-        if (!elementGroups[color]) {
-            elementGroups[color] = [];
+        if (!elementInfo) continue; // Skip null elements
+        
+        const key = `${elementInfo.type}_${elementInfo.opacity}`;
+        
+        if (!elementGroups[key]) {
+            elementGroups[key] = {
+                type: elementInfo.type,
+                opacity: elementInfo.opacity,
+                vertices: []
+            };
         }
         
         // Add centered vertices
         for (let j = 0; j < 9; j += 3) {
-            elementGroups[color].push(
+            elementGroups[key].vertices.push(
                 triangleVerts[j] + offsetX,
                 triangleVerts[j + 1] + offsetY,
                 triangleVerts[j + 2] + offsetZ
@@ -182,47 +192,41 @@ function createStructureFromData() {
     }
     
     // Create meshes for each element type
-    for (const [color, vertices] of Object.entries(elementGroups)) {
+    for (const [key, group] of Object.entries(elementGroups)) {
         const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(group.vertices), 3));
         geometry.computeVertexNormals();
         
+        const color = ELEMENT_COLORS[group.type];
+        
         const material = new THREE.MeshLambertMaterial({ 
-            color: parseInt(color),
-            opacity: 0.7,
+            color: color,
+            opacity: group.opacity,
             transparent: true,
             side: THREE.DoubleSide
         });
         
         const mesh = new THREE.Mesh(geometry, material);
         structure.add(mesh);
-        
-        // Add wireframe
-        const wireframeMaterial = new THREE.LineBasicMaterial({ 
-            color: 0x000000,
-            linewidth: 1
-        });
-        
-        const wireframe = new THREE.LineSegments(
-            new THREE.EdgesGeometry(geometry),
-            wireframeMaterial
-        );
-        structure.add(wireframe);
     }
     
     scene.add(structure);
     
-    // Add grid helper at Z=0 (ground level in centered coordinates)
+    // Create grid that will stick to the building
     const gridSize = buildingMaxSize * 1.5;
     const gridDivisions = 20;
-    const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x444444, 0x888888);
+    gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x444444, 0x888888);
     gridHelper.rotation.x = Math.PI / 2; // Rotate to XY plane (Z-up system)
-    gridHelper.position.z = buildingBounds.min.z - buildingCenter.z; // Place at bottom of building
-    scene.add(gridHelper);
+    
+    // Position grid at bottom of building (in centered coordinates)
+    const gridZ = buildingBounds.min.z - buildingCenter.z;
+    gridHelper.position.z = gridZ;
+    
+    // Add grid to structure group so it rotates with the building
+    structure.add(gridHelper);
     
     console.log('Structure created with color coding');
-    console.log('Element groups:', Object.keys(elementGroups).map(c => {
-        const colorName = Object.keys(ELEMENT_COLORS).find(k => ELEMENT_COLORS[k] === parseInt(c));
-        return `${colorName}: ${elementGroups[c].length / 9} triangles`;
-    }));
+    console.log('Element groups:', Object.values(elementGroups).map(g => 
+        `${g.type}: ${g.vertices.length / 9} triangles`
+    ));
 }
