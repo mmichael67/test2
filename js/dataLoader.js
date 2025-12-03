@@ -130,14 +130,31 @@ function detectElementType(v1x, v1y, v1z, v2x, v2y, v2z, v3x, v3y, v3z) {
     const avgZ = (v1z + v2z + v3z) / 3;
     const maxZDiff = Math.max(Math.abs(v1z - avgZ), Math.abs(v2z - avgZ), Math.abs(v3z - avgZ));
     
-    // SLAB: Nearly horizontal (small Z variation) and large horizontal area
-    if (maxZDiff < 0.15 && (sizeX > 1.0 || sizeY > 1.0)) {
-        return 'SLAB';
-    }
+    // Calculate center point of triangle
+    const centerX = (v1x + v2x + v3x) / 3;
+    const centerY = (v1y + v2y + v3y) / 3;
+    const centerZ = (v1z + v2z + v3z) / 3;
     
     // COLUMN: Vertical element (large Z extent, small XY footprint)
+    // Check this first with priority
     if (sizeZ > 2.0 && sizeX < 1.0 && sizeY < 1.0) {
         return 'COLUMN';
+    }
+    
+    // BEAM: Horizontal elongated element
+    // A beam is elongated in X or Y direction, with small cross-section
+    // Check if triangle is part of a beam by looking at the horizontal extent
+    const maxHorizontalSize = Math.max(sizeX, sizeY);
+    const minHorizontalSize = Math.min(sizeX, sizeY);
+    
+    // Beam criteria:
+    // 1. Elongated horizontally (one dimension much larger than the other)
+    // 2. Small vertical extent (not tall like a wall)
+    // 3. Small cross-section (not wide like a slab)
+    if (maxHorizontalSize > 1.5 && // Elongated
+        minHorizontalSize < 0.8 && // Small cross-section
+        sizeZ < 1.5) {              // Not tall (horizontal element)
+        return 'BEAM';
     }
     
     // WALL: Vertical with large horizontal extent
@@ -145,9 +162,9 @@ function detectElementType(v1x, v1y, v1z, v2x, v2y, v2z, v3x, v3y, v3z) {
         return 'WALL';
     }
     
-    // BEAM: Horizontal element (small Z, elongated in X or Y)
-    if (sizeZ < 1.0 && (sizeX > 1.5 || sizeY > 1.5)) {
-        return 'BEAM';
+    // SLAB: Nearly horizontal (small Z variation) and large horizontal area
+    if (maxZDiff < 0.15 && (sizeX > 1.0 || sizeY > 1.0)) {
+        return 'SLAB';
     }
     
     // Default: treat as SLAB
