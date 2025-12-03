@@ -1,6 +1,16 @@
 // ============================================
-// DATA LOADER - Parse ER-mem.html for geometry
+// DATA LOADER - Parse model.html for geometry
 // ============================================
+
+// Define element colors - FIXED, DO NOT CHANGE
+const ELEMENT_COLORS = {
+    COLUMN: 0x4CAF50,      // Green
+    BEAM: 0x2196F3,        // Blue
+    BRACE: 0xFF9800,       // Orange
+    WALL: 0xBDBDBD,        // Gray (transparent)
+    SLAB: 0x9E9E9E,        // Dark Gray (transparent)
+    SUPPORT: 0xFF0000      // Red
+};
 
 let geometryData = null;
 let colorData = null;
@@ -56,7 +66,7 @@ async function loadStructureData() {
         
         return geometryData;
     } catch (error) {
-        console.error('Error loading ER-mem.html:', error);
+        console.error('Error loading model.html:', error);
         return null;
     }
 }
@@ -102,6 +112,48 @@ function calculateBounds() {
     console.log('Building bounds:', buildingBounds);
 }
 
+// Detect element type based on geometry
+function detectElementType(v1x, v1y, v1z, v2x, v2y, v2z, v3x, v3y, v3z) {
+    // Calculate dimensions of the triangle's bounding box
+    const minX = Math.min(v1x, v2x, v3x);
+    const maxX = Math.max(v1x, v2x, v3x);
+    const minY = Math.min(v1y, v2y, v3y);
+    const maxY = Math.max(v1y, v2y, v3y);
+    const minZ = Math.min(v1z, v2z, v3z);
+    const maxZ = Math.max(v1z, v2z, v3z);
+    
+    const sizeX = maxX - minX;
+    const sizeY = maxY - minY;
+    const sizeZ = maxZ - minZ;
+    
+    // Calculate Z variation
+    const avgZ = (v1z + v2z + v3z) / 3;
+    const maxZDiff = Math.max(Math.abs(v1z - avgZ), Math.abs(v2z - avgZ), Math.abs(v3z - avgZ));
+    
+    // SLAB: Nearly horizontal (small Z variation) and large horizontal area
+    if (maxZDiff < 0.15 && (sizeX > 1.0 || sizeY > 1.0)) {
+        return 'SLAB';
+    }
+    
+    // COLUMN: Vertical element (large Z extent, small XY footprint)
+    if (sizeZ > 2.0 && sizeX < 1.0 && sizeY < 1.0) {
+        return 'COLUMN';
+    }
+    
+    // WALL: Vertical with large horizontal extent
+    if (sizeZ > 1.0 && (sizeX > 2.0 || sizeY > 2.0)) {
+        return 'WALL';
+    }
+    
+    // BEAM: Horizontal element (small Z, elongated in X or Y)
+    if (sizeZ < 1.0 && (sizeX > 1.5 || sizeY > 1.5)) {
+        return 'BEAM';
+    }
+    
+    // Default: treat as SLAB
+    return 'SLAB';
+}
+
 function createStructureFromData() {
     if (!geometryData || !colorData) {
         console.error('No geometry or color data loaded');
@@ -110,16 +162,12 @@ function createStructureFromData() {
     
     structure = new THREE.Group();
     
-    // Set rotation order to ZXY to fix gimbal lock
-    // This ensures vertical drag (X rotation) works correctly after horizontal rotation (Z)
-    structure.rotation.order = 'ZXY';
-    
     // Center the building at origin
     const offsetX = -buildingCenter.x;
     const offsetY = -buildingCenter.y;
     const offsetZ = -buildingCenter.z;
     
-    // Create centered vertex array for main mesh
+    // Create centered vertex array
     const centeredVertices = new Float32Array(geometryData.length);
     for (let i = 0; i < geometryData.length; i += 3) {
         centeredVertices[i] = geometryData[i] + offsetX;
@@ -127,159 +175,50 @@ function createStructureFromData() {
         centeredVertices[i + 2] = geometryData[i + 2] + offsetZ;
     }
     
-    // STANDARD ELEMENT COLORS - same for all models
-    const ELEMENT_COLORS = {
-        COLUMN: 0x4CAF50,      // Green
-        BEAM: 0x2196F3,        // Blue
-        BRACE: 0xFF9800,       // Orange
-        WALL: 0xBDBDBD,        // Gray (transparent)
-        SLAB: 0x9E9E9E,        // Dark Gray (transparent)
-        SUPPORT: 0xFF0000      // Red
-    };
-    
-    // Convert hex colors to RGB (0-1 range)
-    function hexToRgb(hex) {
-        return {
-            r: ((hex >> 16) & 255) / 255,
-            g: ((hex >> 8) & 255) / 255,
-            b: (hex & 255) / 255
-        };
-    }
-    
-    const columnColor = hexToRgb(ELEMENT_COLORS.COLUMN);
-    const beamColor = hexToRgb(ELEMENT_COLORS.BEAM);
-    const wallColor = hexToRgb(ELEMENT_COLORS.WALL);
-    const slabColor = hexToRgb(ELEMENT_COLORS.SLAB);
-    
-    // Apply standard colors with priority: Wall > Column > Beam > Slab
-    const fixedColors = new Float32Array(colorData.length);
-    const transparencyFlags = new Float32Array(colorData.length / 3); // One flag per vertex
-    
-    for (let i = 0; i < colorData.length; i += 9) { // Process each triangle
-        // Get the colors of the 3 vertices
-        const r1 = colorData[i], g1 = colorData[i + 1], b1 = colorData[i + 2];
-        const r2 = colorData[i + 3], g2 = colorData[i + 4], b2 = colorData[i + 5];
-        const r3 = colorData[i + 6], g3 = colorData[i + 7], b3 = colorData[i + 8];
-        
-        // Check if colors are not all the same (indicates overlapping elements)
-        const sameColor = (r1 === r2 && r2 === r3 && g1 === g2 && g2 === g3 && b1 === b2 && b2 === b3);
-        
-        // Identify element type from original colors
-        // Red (0.996, 0, 0) = Column
-        // Blue (0, 0, 0.996) = Beam
-        // White (0.996, 0.996, 0.996) = Slab
-        // Yellow/Green/Other = Wall
-        
-        let selectedColor;
-        let isTransparent = false;
-        
-        if (sameColor) {
-            // Single element - identify type
-            if (r1 > 0.9 && g1 < 0.1 && b1 < 0.1) {
-                // Red = Column
-                selectedColor = columnColor;
-                isTransparent = false;
-            } else if (b1 > 0.9 && r1 < 0.1 && g1 < 0.1) {
-                // Blue = Beam
-                selectedColor = beamColor;
-                isTransparent = false;
-            } else if (r1 > 0.9 && g1 > 0.9 && b1 > 0.9) {
-                // White = Slab
-                selectedColor = slabColor;
-                isTransparent = true;
-            } else {
-                // Other = Wall
-                selectedColor = wallColor;
-                isTransparent = true;
-            }
-        } else {
-            // Overlapping elements - apply priority: Wall > Column > Beam > Slab
-            const colors = [
-                { r: r1, g: g1, b: b1 },
-                { r: r2, g: g2, b: b2 },
-                { r: r3, g: g3, b: b3 }
-            ];
-            
-            // Priority 1: Wall (has green or yellow component, not pure red/blue)
-            const hasWall = colors.some(c => 
-                !((c.r > 0.9 && c.g < 0.1 && c.b < 0.1) || // Not column
-                  (c.b > 0.9 && c.r < 0.1 && c.g < 0.1) || // Not beam
-                  (c.r > 0.9 && c.g > 0.9 && c.b > 0.9))   // Not slab
-            );
-            
-            if (hasWall) {
-                selectedColor = wallColor;
-                isTransparent = true;
-            } else {
-                // Priority 2: Column (red)
-                const hasColumn = colors.some(c => c.r > 0.9 && c.g < 0.1 && c.b < 0.1);
-                
-                if (hasColumn) {
-                    selectedColor = columnColor;
-                    isTransparent = false;
-                } else {
-                    // Priority 3: Beam (blue)
-                    const hasBeam = colors.some(c => c.b > 0.9 && c.r < 0.1 && c.g < 0.1);
-                    
-                    if (hasBeam) {
-                        selectedColor = beamColor;
-                        isTransparent = false;
-                    } else {
-                        // Priority 4: Slab (white)
-                        selectedColor = slabColor;
-                        isTransparent = true;
-                    }
-                }
-            }
-        }
-        
-        // Apply selected color to all vertices of this triangle
-        for (let j = 0; j < 9; j += 3) {
-            fixedColors[i + j] = selectedColor.r;
-            fixedColors[i + j + 1] = selectedColor.g;
-            fixedColors[i + j + 2] = selectedColor.b;
-            
-            const vertexIndex = (i + j) / 3;
-            transparencyFlags[vertexIndex] = isTransparent ? 1 : 0;
-        }
-    }
-    
-    // Create TWO meshes: one for opaque elements (columns/beams), one for transparent (walls/slabs)
-    const opaqueVertices = [];
-    const opaqueColors = [];
-    const transparentVertices = [];
-    const transparentColors = [];
+    // Detect element types and assign proper colors
+    const newColors = new Float32Array(colorData.length);
+    const opaqueIndices = [];
+    const transparentIndices = [];
     
     for (let i = 0; i < centeredVertices.length; i += 9) {
-        const v1Index = i / 3;
-        const v2Index = (i + 3) / 3;
-        const v3Index = (i + 6) / 3;
+        const v1x = centeredVertices[i], v1y = centeredVertices[i + 1], v1z = centeredVertices[i + 2];
+        const v2x = centeredVertices[i + 3], v2y = centeredVertices[i + 4], v2z = centeredVertices[i + 5];
+        const v3x = centeredVertices[i + 6], v3y = centeredVertices[i + 7], v3z = centeredVertices[i + 8];
         
-        // Check if any vertex is transparent
-        const isTriangleTransparent = transparencyFlags[v1Index] === 1 || 
-                                      transparencyFlags[v2Index] === 1 || 
-                                      transparencyFlags[v3Index] === 1;
+        const elementType = detectElementType(v1x, v1y, v1z, v2x, v2y, v2z, v3x, v3y, v3z);
         
-        if (isTriangleTransparent) {
-            // Add to transparent mesh
-            for (let j = 0; j < 9; j++) {
-                transparentVertices.push(centeredVertices[i + j]);
-                transparentColors.push(fixedColors[i + j]);
-            }
+        let color;
+        if (elementType === 'COLUMN') {
+            color = new THREE.Color(ELEMENT_COLORS.COLUMN);
+        } else if (elementType === 'BEAM') {
+            color = new THREE.Color(ELEMENT_COLORS.BEAM);
+        } else if (elementType === 'WALL') {
+            color = new THREE.Color(ELEMENT_COLORS.WALL);
+        } else { // SLAB
+            color = new THREE.Color(ELEMENT_COLORS.SLAB);
+        }
+        
+        // Apply color to all 3 vertices
+        for (let j = 0; j < 3; j++) {
+            newColors[i + j * 3] = color.r;
+            newColors[i + j * 3 + 1] = color.g;
+            newColors[i + j * 3 + 2] = color.b;
+        }
+        
+        // Separate opaque and transparent elements
+        if (elementType === 'SLAB' || elementType === 'WALL') {
+            transparentIndices.push(i / 3, i / 3 + 1, i / 3 + 2);
         } else {
-            // Add to opaque mesh
-            for (let j = 0; j < 9; j++) {
-                opaqueVertices.push(centeredVertices[i + j]);
-                opaqueColors.push(fixedColors[i + j]);
-            }
+            opaqueIndices.push(i / 3, i / 3 + 1, i / 3 + 2);
         }
     }
     
     // Create opaque mesh (columns and beams)
-    if (opaqueVertices.length > 0) {
+    if (opaqueIndices.length > 0) {
         const opaqueGeometry = new THREE.BufferGeometry();
-        opaqueGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(opaqueVertices), 3));
-        opaqueGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(opaqueColors), 3));
+        opaqueGeometry.setAttribute('position', new THREE.BufferAttribute(centeredVertices, 3));
+        opaqueGeometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
+        opaqueGeometry.setIndex(opaqueIndices);
         opaqueGeometry.computeVertexNormals();
         
         const opaqueMaterial = new THREE.MeshLambertMaterial({ 
@@ -289,56 +228,53 @@ function createStructureFromData() {
         
         const opaqueMesh = new THREE.Mesh(opaqueGeometry, opaqueMaterial);
         structure.add(opaqueMesh);
+        console.log('Added opaque mesh with', opaqueIndices.length / 3, 'triangles');
     }
     
-    // Create transparent mesh (walls and slabs)
-    if (transparentVertices.length > 0) {
+    // Create transparent mesh (slabs and walls)
+    if (transparentIndices.length > 0) {
         const transparentGeometry = new THREE.BufferGeometry();
-        transparentGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(transparentVertices), 3));
-        transparentGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(transparentColors), 3));
+        transparentGeometry.setAttribute('position', new THREE.BufferAttribute(centeredVertices, 3));
+        transparentGeometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
+        transparentGeometry.setIndex(transparentIndices);
         transparentGeometry.computeVertexNormals();
         
         const transparentMaterial = new THREE.MeshLambertMaterial({ 
             vertexColors: true,
-            opacity: 0.6,
             transparent: true,
+            opacity: 0.6,
             side: THREE.DoubleSide
         });
         
         const transparentMesh = new THREE.Mesh(transparentGeometry, transparentMaterial);
         structure.add(transparentMesh);
+        console.log('Added transparent mesh with', transparentIndices.length / 3, 'triangles');
     }
     
     scene.add(structure);
     
-    // Create grid that will stick to the building
+    // Create grid at bottom
     const gridSize = buildingMaxSize * 1.5;
     const gridDivisions = 20;
     gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x444444, 0x888888);
-    gridHelper.rotation.x = Math.PI / 2; // Rotate to XY plane (Z-up system)
+    gridHelper.rotation.x = Math.PI / 2;
     
-    // Position grid at bottom of building (in centered coordinates)
     const gridZ = buildingBounds.min.z - buildingCenter.z;
     gridHelper.position.z = gridZ;
     
-    // Add grid to structure group so it rotates with the building
     structure.add(gridHelper);
     
     console.log('Structure created with', geometryData.length / 9, 'triangles');
-    console.log('Opaque triangles:', opaqueVertices.length / 9);
-    console.log('Transparent triangles:', transparentVertices.length / 9);
 }
 
 function resetView() {
     if (!initialCameraPosition || !initialCameraTarget) return;
     
-    // Reset camera position
     camera.position.copy(initialCameraPosition);
     cameraTarget.copy(initialCameraTarget);
     cameraPan.copy(initialCameraTarget);
     camera.lookAt(cameraTarget);
     
-    // Reset structure rotation
     if (structure) {
         structure.rotation.set(0, 0, 0);
         targetRotationX = 0;

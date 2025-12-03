@@ -73,8 +73,10 @@ function animate() {
     updateWalkMovement();
 
     if (structure) {
-        // FIXED ROTATION: Apply rotations smoothly
-        // The building is centered at origin (0,0,0)
+        // FIXED ROTATION with proper order (ZXY)
+        // This ensures X rotation (tilt) always happens around a horizontal axis
+        // even after Z rotation (spin)
+        structure.rotation.order = 'ZXY';  // Apply Z first, then X, then Y
         
         // Smooth interpolation for rotations
         structure.rotation.z += (targetRotationY - structure.rotation.z) * 0.1;
