@@ -7,14 +7,15 @@ let buildingBounds = null;
 let buildingCenter = null;
 let buildingMaxSize = null;
 let gridHelper = null;
+let initialCameraPosition = null;
+let initialCameraTarget = null;
 
-// Element type colors - using original style colors
+// Element type colors - using colors from your specification
 const ELEMENT_COLORS = {
     COLUMN: 0xff4444,      // Red
     BEAM: 0x4444ff,        // Blue
-    SLAB: 0x2222ff,        // Blue with transparency (original style)
-    WALL: 0x2222ff,        // Blue with transparency (original style)
-    OTHER: 0x888888        // Gray
+    SLAB: 0x2222ff,        // Blue (like original)
+    WALL: 0x2222ff,        // Blue (like original)
 };
 
 // Parse the ER-mem.html file to extract vertex data
@@ -111,32 +112,28 @@ function detectElementType(vertices) {
     const dy = maxY - minY;
     const dz = maxZ - minZ;
     
-    // Column: vertical element (one dimension much larger in Z direction)
-    if (dz > dx * 2 && dz > dy * 2 && dz > 2.0) {
-        return { type: 'COLUMN', opacity: 0.85 };
+    // Column: vertical element (Z dimension much larger than X and Y)
+    if (dz > 2.0 && dz > dx * 2 && dz > dy * 2) {
+        return { type: 'COLUMN', opacity: 0.8 };
     }
     
-    // Slab: horizontal thin element (small Z dimension, large X and Y)
-    if (dz < 0.5 && (dx > 2.0 || dy > 2.0)) {
+    // Slab: horizontal thin element (small Z dimension, large X or Y)
+    if (dz < 0.5 && (dx > 1.0 || dy > 1.0)) {
         return { type: 'SLAB', opacity: 0.6 };
     }
     
-    // Beam: horizontal elongated element (one horizontal dimension much larger)
-    if (dz < dx && dz < dy && dz > 0.3 && (dx > dy * 2 || dy > dx * 2) && (dx > 2.0 || dy > 2.0)) {
-        return { type: 'BEAM', opacity: 0.85 };
+    // Beam: horizontal elongated element
+    if (dz > 0.3 && dz < 1.0 && (dx > 1.5 || dy > 1.5)) {
+        return { type: 'BEAM', opacity: 0.8 };
     }
     
     // Wall: vertical thin element
-    if ((dx < 0.5 || dy < 0.5) && dz > 1.0) {
+    if (dz > 1.0 && (dx < 0.5 || dy < 0.5)) {
         return { type: 'WALL', opacity: 0.6 };
     }
     
-    // Filter out very small elements (likely extras)
-    if (dx < 1.0 && dy < 1.0 && dz < 1.0) {
-        return null;
-    }
-    
-    return null; // Don't show other elements
+    // Default: treat as slab/wall (use blue with transparency)
+    return { type: 'SLAB', opacity: 0.6 };
 }
 
 function createStructureFromData() {
@@ -168,9 +165,6 @@ function createStructureFromData() {
         
         // Detect element type
         const elementInfo = detectElementType(triangleVerts);
-        
-        if (!elementInfo) continue; // Skip null elements
-        
         const key = `${elementInfo.type}_${elementInfo.opacity}`;
         
         if (!elementGroups[key]) {
@@ -229,4 +223,21 @@ function createStructureFromData() {
     console.log('Element groups:', Object.values(elementGroups).map(g => 
         `${g.type}: ${g.vertices.length / 9} triangles`
     ));
+}
+
+function resetView() {
+    if (!initialCameraPosition || !initialCameraTarget) return;
+    
+    // Reset camera position
+    camera.position.copy(initialCameraPosition);
+    cameraTarget.copy(initialCameraTarget);
+    cameraPan.copy(initialCameraTarget);
+    camera.lookAt(cameraTarget);
+    
+    // Reset structure rotation
+    if (structure) {
+        structure.rotation.set(0, 0, 0);
+        targetRotationX = 0;
+        targetRotationY = 0;
+    }
 }
