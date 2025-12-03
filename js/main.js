@@ -32,6 +32,20 @@ function toggleCanvasBackground() {
     }
 }
 
+// Slabs and Walls Toggle Function
+function toggleSlabsWalls() {
+    const toggle = document.getElementById('slabWallToggle');
+    
+    if (slabMesh) {
+        slabMesh.visible = toggle.checked;
+    }
+    if (wallMesh) {
+        wallMesh.visible = toggle.checked;
+    }
+    
+    console.log('Slabs & Walls visibility:', toggle.checked);
+}
+
 // Create animated moving stars background
 function createStars() {
     const container = document.getElementById('starsContainer');

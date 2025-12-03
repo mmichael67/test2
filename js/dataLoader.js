@@ -20,6 +20,8 @@ let buildingMaxSize = null;
 let gridHelper = null;
 let initialCameraPosition = null;
 let initialCameraTarget = null;
+let slabMesh = null;  // Global reference to slab mesh
+let wallMesh = null;  // Global reference to wall mesh
 
 // Parse the model.html file to extract vertex and color data
 async function loadStructureData() {
@@ -241,7 +243,7 @@ function createStructureFromData() {
             depthWrite: false // Don't write to depth buffer for transparency
         });
         
-        const slabMesh = new THREE.Mesh(slabGeometry, slabMaterial);
+        slabMesh = new THREE.Mesh(slabGeometry, slabMaterial);
         slabMesh.renderOrder = 1;
         structure.add(slabMesh);
         console.log('Added slabs:', slabIndices.length / 3, 'triangles');
@@ -263,7 +265,7 @@ function createStructureFromData() {
             depthWrite: false
         });
         
-        const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
+        wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
         wallMesh.renderOrder = 2;
         structure.add(wallMesh);
         console.log('Added walls:', wallIndices.length / 3, 'triangles');
