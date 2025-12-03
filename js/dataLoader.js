@@ -176,9 +176,12 @@ function createStructureFromData() {
     }
     
     // Detect element types and assign proper colors
+    const elementTypes = []; // Store element type for each triangle
     const newColors = new Float32Array(colorData.length);
-    const opaqueIndices = [];
-    const transparentIndices = [];
+    const columnIndices = [];
+    const beamIndices = [];
+    const wallIndices = [];
+    const slabIndices = [];
     
     for (let i = 0; i < centeredVertices.length; i += 9) {
         const v1x = centeredVertices[i], v1y = centeredVertices[i + 1], v1z = centeredVertices[i + 2];
@@ -186,6 +189,7 @@ function createStructureFromData() {
         const v3x = centeredVertices[i + 6], v3y = centeredVertices[i + 7], v3z = centeredVertices[i + 8];
         
         const elementType = detectElementType(v1x, v1y, v1z, v2x, v2y, v2z, v3x, v3y, v3z);
+        elementTypes.push(elementType);
         
         let color;
         if (elementType === 'COLUMN') {
@@ -205,50 +209,102 @@ function createStructureFromData() {
             newColors[i + j * 3 + 2] = color.b;
         }
         
-        // Separate opaque and transparent elements
-        if (elementType === 'SLAB' || elementType === 'WALL') {
-            transparentIndices.push(i / 3, i / 3 + 1, i / 3 + 2);
-        } else {
-            opaqueIndices.push(i / 3, i / 3 + 1, i / 3 + 2);
+        // Separate by element type - Priority: Column > Beam > Wall > Slab
+        const triIndex = i / 3;
+        if (elementType === 'COLUMN') {
+            columnIndices.push(triIndex, triIndex + 1, triIndex + 2);
+        } else if (elementType === 'BEAM') {
+            beamIndices.push(triIndex, triIndex + 1, triIndex + 2);
+        } else if (elementType === 'WALL') {
+            wallIndices.push(triIndex, triIndex + 1, triIndex + 2);
+        } else { // SLAB
+            slabIndices.push(triIndex, triIndex + 1, triIndex + 2);
         }
     }
     
-    // Create opaque mesh (columns and beams)
-    if (opaqueIndices.length > 0) {
-        const opaqueGeometry = new THREE.BufferGeometry();
-        opaqueGeometry.setAttribute('position', new THREE.BufferAttribute(centeredVertices, 3));
-        opaqueGeometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
-        opaqueGeometry.setIndex(opaqueIndices);
-        opaqueGeometry.computeVertexNormals();
-        
-        const opaqueMaterial = new THREE.MeshLambertMaterial({ 
-            vertexColors: true,
-            side: THREE.DoubleSide
-        });
-        
-        const opaqueMesh = new THREE.Mesh(opaqueGeometry, opaqueMaterial);
-        structure.add(opaqueMesh);
-        console.log('Added opaque mesh with', opaqueIndices.length / 3, 'triangles');
-    }
+    // Render in priority order: Slabs first (back), then Walls, Beams, Columns (front)
+    // This ensures columns are always visible on top
     
-    // Create transparent mesh (slabs and walls)
-    if (transparentIndices.length > 0) {
-        const transparentGeometry = new THREE.BufferGeometry();
-        transparentGeometry.setAttribute('position', new THREE.BufferAttribute(centeredVertices, 3));
-        transparentGeometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
-        transparentGeometry.setIndex(transparentIndices);
-        transparentGeometry.computeVertexNormals();
+    // 1. Slabs (lowest priority - render first, transparent)
+    if (slabIndices.length > 0) {
+        const slabGeometry = new THREE.BufferGeometry();
+        slabGeometry.setAttribute('position', new THREE.BufferAttribute(centeredVertices, 3));
+        slabGeometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
+        slabGeometry.setIndex(slabIndices);
+        slabGeometry.computeVertexNormals();
         
-        const transparentMaterial = new THREE.MeshLambertMaterial({ 
+        const slabMaterial = new THREE.MeshLambertMaterial({ 
             vertexColors: true,
             transparent: true,
             opacity: 0.6,
+            side: THREE.DoubleSide,
+            depthWrite: false // Don't write to depth buffer for transparency
+        });
+        
+        const slabMesh = new THREE.Mesh(slabGeometry, slabMaterial);
+        slabMesh.renderOrder = 1;
+        structure.add(slabMesh);
+        console.log('Added slabs:', slabIndices.length / 3, 'triangles');
+    }
+    
+    // 2. Walls (transparent)
+    if (wallIndices.length > 0) {
+        const wallGeometry = new THREE.BufferGeometry();
+        wallGeometry.setAttribute('position', new THREE.BufferAttribute(centeredVertices, 3));
+        wallGeometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
+        wallGeometry.setIndex(wallIndices);
+        wallGeometry.computeVertexNormals();
+        
+        const wallMaterial = new THREE.MeshLambertMaterial({ 
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.6,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+        
+        const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
+        wallMesh.renderOrder = 2;
+        structure.add(wallMesh);
+        console.log('Added walls:', wallIndices.length / 3, 'triangles');
+    }
+    
+    // 3. Beams (opaque, higher priority)
+    if (beamIndices.length > 0) {
+        const beamGeometry = new THREE.BufferGeometry();
+        beamGeometry.setAttribute('position', new THREE.BufferAttribute(centeredVertices, 3));
+        beamGeometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
+        beamGeometry.setIndex(beamIndices);
+        beamGeometry.computeVertexNormals();
+        
+        const beamMaterial = new THREE.MeshLambertMaterial({ 
+            vertexColors: true,
             side: THREE.DoubleSide
         });
         
-        const transparentMesh = new THREE.Mesh(transparentGeometry, transparentMaterial);
-        structure.add(transparentMesh);
-        console.log('Added transparent mesh with', transparentIndices.length / 3, 'triangles');
+        const beamMesh = new THREE.Mesh(beamGeometry, beamMaterial);
+        beamMesh.renderOrder = 3;
+        structure.add(beamMesh);
+        console.log('Added beams:', beamIndices.length / 3, 'triangles');
+    }
+    
+    // 4. Columns (opaque, highest priority - render last)
+    if (columnIndices.length > 0) {
+        const columnGeometry = new THREE.BufferGeometry();
+        columnGeometry.setAttribute('position', new THREE.BufferAttribute(centeredVertices, 3));
+        columnGeometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
+        columnGeometry.setIndex(columnIndices);
+        columnGeometry.computeVertexNormals();
+        
+        const columnMaterial = new THREE.MeshLambertMaterial({ 
+            vertexColors: true,
+            side: THREE.DoubleSide
+        });
+        
+        const columnMesh = new THREE.Mesh(columnGeometry, columnMaterial);
+        columnMesh.renderOrder = 4;
+        structure.add(columnMesh);
+        console.log('Added columns:', columnIndices.length / 3, 'triangles');
     }
     
     scene.add(structure);
