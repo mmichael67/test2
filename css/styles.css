@@ -144,7 +144,7 @@ body.fullscreen-mode .canvas-wrapper {
 
 #container {
     width: 100%;
-    height: 900px;
+    height: 675px;
     position: relative;
     background: #f8fafc;
 }
@@ -472,7 +472,7 @@ input:checked + .slider:before {
 /* Responsive Design */
 @media (max-width: 1024px) {
     #container {
-        height: 800px;
+        height: 600px;
     }
 
     .project-stats {
@@ -506,7 +506,7 @@ input:checked + .slider:before {
     }
     
     #container {
-        height: 600px;
+        height: 450px;
     }
     
     .footer-content {
@@ -540,7 +540,7 @@ input:checked + .slider:before {
     }
     
     #container {
-        height: 500px;
+        height: 375px;
     }
     
     #controls {

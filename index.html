@@ -50,13 +50,6 @@
                             <span class="slider"></span>
                         </label>
                     </div>
-                    <div class="toggle-row">
-                        <span class="canvas-bg-label">Slabs & Walls</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="slabWallToggle" checked onchange="toggleSlabsWalls()">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
                     <button class="reset-view-btn" onclick="resetView()">Reset View</button>
                 </div>
 
@@ -101,7 +94,7 @@
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Render Mode</div>
-                    <div class="stat-value">Transparent</div>
+                    <div class="stat-value">Interactive</div>
                 </div>
             </div>
         </div>
@@ -152,14 +145,397 @@
         </div>
     </footer>
 
-    <!-- Three.js CDN - Must load first -->
+    <!-- Three.js and TrackballControls -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TrackballControls.js"></script>
 
-    <!-- Load in strict dependency order -->
-    <script src="js/dataLoader.js"></script>
-    <script src="js/support.js"></script>
-    <script src="js/scene.js"></script>
-    <script src="js/interactions.js"></script>
-    <script src="js/main.js"></script>
+    <script>
+        // ============================================
+        // GLOBAL VARIABLES
+        // ============================================
+        let scene, camera, renderer, clock;
+        let structure, gridHelper;
+        let trackballControls;
+        let geometryData = null;
+        let buildingBounds = null;
+        let buildingCenter = null;
+        let buildingMaxSize = null;
+        let initialCameraPosition = null;
+        let initialCameraTarget = null;
+        let keys = {};
+        let moveSpeed = 0.3;
+        let canvasHasFocus = false;
+
+        // ============================================
+        // FILE LOADING
+        // ============================================
+        async function loadModelFromFile() {
+            try {
+                const response = await fetch('model.html');
+                const htmlText = await response.text();
+                loadModelFromHTML(htmlText);
+            } catch (error) {
+                console.error('Error loading model.html:', error);
+                alert('Could not load model.html file. Please make sure it exists in the same directory.');
+            }
+        }
+
+        function loadModelFromHTML(htmlText) {
+            // Clear existing
+            if (structure) scene.remove(structure);
+            if (gridHelper) scene.remove(gridHelper);
+            
+            // Extract vertex data
+            const vertexMatch = htmlText.match(/var vertices = new Float32Array\(\[([\s\S]*?)\]\);/);
+            const colorMatch = htmlText.match(/var clr1 = new Float32Array\(\[([\s\S]*?)\]\);/);
+            
+            if (!vertexMatch || !colorMatch) {
+                alert('Could not find geometry data. Please select a valid ETABS HTML export.');
+                return;
+            }
+            
+            // Parse data
+            const vertexString = vertexMatch[1];
+            const vertices = vertexString.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+            
+            const colorString = colorMatch[1];
+            const colors = colorString.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+            
+            geometryData = new Float32Array(vertices);
+            const colorData = new Float32Array(colors);
+            
+            console.log('Loaded', vertices.length / 3, 'vertices');
+            
+            calculateBounds();
+            createStructureFromData(colorData);
+            addGrid();
+            positionCamera();
+        }
+
+        function calculateBounds() {
+            let minX = Infinity, minY = Infinity, minZ = Infinity;
+            let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+            
+            for (let i = 0; i < geometryData.length; i += 3) {
+                minX = Math.min(minX, geometryData[i]);
+                minY = Math.min(minY, geometryData[i + 1]);
+                minZ = Math.min(minZ, geometryData[i + 2]);
+                maxX = Math.max(maxX, geometryData[i]);
+                maxY = Math.max(maxY, geometryData[i + 1]);
+                maxZ = Math.max(maxZ, geometryData[i + 2]);
+            }
+            
+            buildingCenter = {
+                x: (minX + maxX) / 2,
+                y: (minY + maxY) / 2,
+                z: (minZ + maxZ) / 2
+            };
+            
+            buildingMaxSize = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
+            
+            buildingBounds = {
+                min: { x: minX, y: minY, z: minZ },
+                max: { x: maxX, y: maxY, z: maxZ },
+                center: buildingCenter,
+                maxSize: buildingMaxSize
+            };
+            
+            moveSpeed = buildingMaxSize * 0.01;
+        }
+
+        function createStructureFromData(colorData) {
+            structure = new THREE.Group();
+            
+            // Center the building at origin
+            const offsetX = -buildingCenter.x;
+            const offsetY = -buildingCenter.y;
+            const offsetZ = -buildingCenter.z;
+            
+            const centeredVertices = new Float32Array(geometryData.length);
+            for (let i = 0; i < geometryData.length; i += 3) {
+                centeredVertices[i] = geometryData[i] + offsetX;
+                centeredVertices[i + 1] = geometryData[i + 1] + offsetY;
+                centeredVertices[i + 2] = geometryData[i + 2] + offsetZ;
+            }
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(centeredVertices, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colorData, 3));
+            geometry.computeVertexNormals();
+            
+            const material = new THREE.MeshLambertMaterial({
+                vertexColors: true,
+                opacity: 0.99,
+                transparent: true,
+                side: THREE.DoubleSide
+            });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            structure.add(mesh);
+            scene.add(structure);
+        }
+
+        function addGrid() {
+            const gridSize = buildingMaxSize * 1.5;
+            const gridDivisions = 20;
+            gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x444444, 0x888888);
+            gridHelper.rotation.x = Math.PI / 2;
+            
+            const gridZ = buildingBounds.min.z - buildingCenter.z;
+            gridHelper.position.z = gridZ;
+            
+            structure.add(gridHelper);
+        }
+
+        function positionCamera() {
+            const distance = buildingMaxSize * 2;
+            camera.position.set(distance * 0.8, distance * 0.5, distance * 0.4);
+            
+            if (trackballControls) {
+                trackballControls.target.set(0, 0, 0);
+                trackballControls.update();
+            }
+            
+            initialCameraPosition = camera.position.clone();
+            initialCameraTarget = new THREE.Vector3(0, 0, 0);
+        }
+
+        // ============================================
+        // SCENE INITIALIZATION
+        // ============================================
+        function init() {
+            clock = new THREE.Clock();
+            
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf8fafc);
+
+            const container = document.getElementById('container');
+            camera = new THREE.PerspectiveCamera(
+                50,
+                container.clientWidth / container.clientHeight,
+                1,
+                10000
+            );
+            
+            camera.up.set(0, 0, 1);
+            camera.position.set(100, 100, 100);
+
+            const canvas = document.getElementById('canvas');
+            renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            // Initialize TrackballControls
+            trackballControls = new THREE.TrackballControls(camera, canvas);
+            trackballControls.rotateSpeed = 1.0;
+            trackballControls.zoomSpeed = 0.5;
+            trackballControls.panSpeed = 0.3;
+            trackballControls.staticMoving = false; // Enable inertia!
+            trackballControls.dynamicDampingFactor = 0.2; // Smooth deceleration
+            trackballControls.target = new THREE.Vector3(0, 0, 0);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(20, 30, 20);
+            scene.add(directionalLight);
+
+            const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
+            directionalLight2.position.set(-20, 20, -20);
+            scene.add(directionalLight2);
+
+            canvas.addEventListener('mouseenter', () => { canvasHasFocus = true; });
+            canvas.addEventListener('mouseleave', () => { canvasHasFocus = false; });
+
+            window.addEventListener('keydown', onKeyDown);
+            window.addEventListener('keyup', onKeyUp);
+            window.addEventListener('resize', onWindowResize);
+
+            animate();
+            
+            // Auto-load model.html
+            loadModelFromFile();
+        }
+
+        // ============================================
+        // KEYBOARD CONTROLS
+        // ============================================
+        function onKeyDown(e) {
+            const key = e.key.toLowerCase();
+            const code = e.code.toLowerCase();
+            keys[key] = true;
+            keys[code] = true;
+            
+            const navKeys = ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'];
+            if (canvasHasFocus && (navKeys.includes(key) || navKeys.includes(code))) {
+                e.preventDefault();
+            }
+        }
+
+        function onKeyUp(e) {
+            keys[e.key.toLowerCase()] = false;
+            keys[e.code.toLowerCase()] = false;
+        }
+
+        function updateWalkMovement() {
+            if (!canvasHasFocus || !buildingMaxSize) return;
+
+            const forward = new THREE.Vector3();
+            camera.getWorldDirection(forward);
+            forward.z = 0;
+            forward.normalize();
+
+            const right = new THREE.Vector3();
+            right.crossVectors(forward, new THREE.Vector3(0, 0, 1)).normalize();
+
+            let moved = false;
+            
+            if (keys['w'] || keys['arrowup']) {
+                camera.position.addScaledVector(forward, moveSpeed);
+                trackballControls.target.addScaledVector(forward, moveSpeed);
+                moved = true;
+            }
+            if (keys['s'] || keys['arrowdown']) {
+                camera.position.addScaledVector(forward, -moveSpeed);
+                trackballControls.target.addScaledVector(forward, -moveSpeed);
+                moved = true;
+            }
+            if (keys['a'] || keys['arrowleft']) {
+                camera.position.addScaledVector(right, -moveSpeed);
+                trackballControls.target.addScaledVector(right, -moveSpeed);
+                moved = true;
+            }
+            if (keys['d'] || keys['arrowright']) {
+                camera.position.addScaledVector(right, moveSpeed);
+                trackballControls.target.addScaledVector(right, moveSpeed);
+                moved = true;
+            }
+            
+            if (moved) {
+                trackballControls.update();
+            }
+        }
+
+        // ============================================
+        // UI CONTROLS
+        // ============================================
+        function toggleFullscreen() {
+            const body = document.body;
+            const toggle = document.getElementById('fullscreenToggle');
+            
+            if (toggle.checked) {
+                body.classList.add('fullscreen-mode');
+            } else {
+                body.classList.remove('fullscreen-mode');
+            }
+            
+            setTimeout(onWindowResize, 100);
+        }
+
+        function toggleCanvasBackground() {
+            const container = document.getElementById('container');
+            const toggle = document.getElementById('canvasBgToggle');
+            
+            if (toggle.checked) {
+                container.classList.add('dark-canvas');
+                scene.background = new THREE.Color(0x1a1a1a);
+            } else {
+                container.classList.remove('dark-canvas');
+                scene.background = new THREE.Color(0xf8fafc);
+            }
+        }
+
+        function resetView() {
+            if (!initialCameraPosition || !trackballControls) {
+                console.log('Cannot reset - missing initial values');
+                return;
+            }
+            
+            console.log('Resetting view...');
+            console.log('Current camera:', camera.position);
+            console.log('Initial camera:', initialCameraPosition);
+            console.log('Current target:', trackballControls.target);
+            console.log('Initial target:', initialCameraTarget);
+            
+            // Reset camera position
+            camera.position.copy(initialCameraPosition);
+            
+            // Reset target to building center
+            trackballControls.target.copy(initialCameraTarget);
+            
+            // Force update
+            trackballControls.update();
+            
+            // Reset structure rotation
+            if (structure) {
+                structure.rotation.set(0, 0, 0);
+            }
+            
+            console.log('View reset complete!');
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            
+            if (trackballControls) {
+                trackballControls.handleResize();
+            }
+        }
+
+        // ============================================
+        // ANIMATION LOOP
+        // ============================================
+        function animate() {
+            requestAnimationFrame(animate);
+
+            updateWalkMovement();
+
+            const delta = clock.getDelta();
+            trackballControls.update(delta);
+
+            renderer.render(scene, camera);
+        }
+
+        // ============================================
+        // STARS BACKGROUND
+        // ============================================
+        function createStars() {
+            const container = document.getElementById('starsContainer');
+            const numStars = 200;
+            
+            for (let i = 0; i < numStars; i++) {
+                const star = document.createElement('div');
+                star.className = 'star';
+                
+                const size = Math.random() * 3 + 1;
+                star.style.width = size + 'px';
+                star.style.height = size + 'px';
+                star.style.left = Math.random() * 100 + '%';
+                star.style.top = Math.random() * 100 + '%';
+                
+                const twinkleDuration = Math.random() * 4 + 2;
+                const moveDuration = Math.random() * 40 + 40;
+                
+                star.style.animation = `twinkle ${twinkleDuration}s linear infinite, moveStar ${moveDuration}s linear infinite`;
+                
+                container.appendChild(star);
+            }
+        }
+
+        // Mobile menu toggle
+        const hamburger = document.getElementById('hamburger');
+        const navMenu = document.getElementById('navMenu');
+
+        hamburger.addEventListener('click', () => {
+            navMenu.classList.toggle('active');
+        });
+
+        createStars();
+        init();
+    </script>
 </body>
 </html>
